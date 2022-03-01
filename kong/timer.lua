@@ -4,7 +4,7 @@ local sleep = ngx.sleep
 local exiting = ngx.worker.exiting
 
 local now = ngx.now
-local update_timer = ngx.update_time
+local update_time = ngx.update_time
 
 local unpack = table.unpack
 
@@ -41,10 +41,15 @@ local function job_tostring(job)
     local str = ""
     
     local stats = job.stats
+    local delay = job.delay
     local latency = stats.latency
     local meta = job.meta
 
     str = str .. "name = " .. job.name
+    str = str .. ", delay.hour = " .. delay.hour
+    str = str .. ", delay.minute = " .. delay.minute
+    str = str .. ", delay.second = " .. delay.second
+    str = str .. ", delay.msec = " .. delay.msec
     str = str .. ", latency.max = " .. latency.max
     str = str .. ", latency.min = " .. latency.min
     str = str .. ", latency.avg = " .. latency.avg
@@ -52,6 +57,19 @@ local function job_tostring(job)
     str = str .. ", meta.name = " .. meta.name
 
     return str
+end
+
+
+local function is_empty_table(t)
+    if not t then
+        return true
+    end
+
+    for k, v in pairs(t) do
+        return false
+    end
+
+    return true
 end
 
 
@@ -155,7 +173,7 @@ local function job_wrapper(job)
     stats.finish = finish
 
     if FOCUS_UPDATE_TIME then
-        update_timer()
+        update_time()
     end
 
     local spend = now() - start
@@ -250,16 +268,21 @@ local function wheel_move_to_next(wheel)
 end
 
 
-local function job_re_cal_next_pointer(job, wheel)
+local function wheel_get_jobs(wheel)
+    return wheel.array[wheel.pointer]
+end
+
+
+local function job_re_cal_next_pointer(job, wheels)
     local delay_hour = job.delay.hour
     local delay_minute = job.delay.minute
     local delay_second = job.delay.second
     local delay_msec = job.delay.msec
 
-    local hour_wheel = wheel.hour
-    local minute_wheel = wheel.min
-    local second_wheel = wheel.sec
-    local msec_wheel = wheel.msec
+    local hour_wheel = wheels.hour
+    local minute_wheel = wheels.min
+    local second_wheel = wheels.sec
+    local msec_wheel = wheels.msec
 
     local cur_hour_pointer = wheel_get_cur_pointer(hour_wheel)
     local cur_minute_pointer = wheel_get_cur_pointer(minute_wheel)
@@ -319,7 +342,7 @@ local function job_create_meta(job)
 end
 
 
-local function job_create(wheel, name, callback, delay, once, args)
+local function job_create(self, name, callback, delay, once, args)
     local _, delay_msec = math.modf(delay)
     delay_msec = max(delay_msec * 100, 100)
     delay_msec = ceil(delay_msec)
@@ -370,7 +393,7 @@ local function job_create(wheel, name, callback, delay, once, args)
 
     job_create_meta(ret)
 
-    job_re_cal_next_pointer(ret, wheel)
+    job_re_cal_next_pointer(ret, self.wheels)
 
     setmetatable(ret, {
         __tostring = job_tostring
@@ -382,13 +405,14 @@ local function job_create(wheel, name, callback, delay, once, args)
 end
 
 
-local function insert_job_to_wheel(wheel, job)
+local function insert_job_to_wheel(self, job)
     local ok, err
 
-    local hour_wheel = wheel.hour
-    local minute_wheel = wheel.min
-    local second_wheel = wheel.sec
-    local msec_wheel = wheel.msec
+    local wheels = self.wheels
+    local hour_wheel = wheels.hour
+    local minute_wheel = wheels.min
+    local second_wheel = wheels.sec
+    local msec_wheel = wheels.msec
     
 
     if job.next_pointer.hour ~= 0 then
@@ -412,82 +436,69 @@ local function insert_job_to_wheel(wheel, job)
 end
 
 
-local function worker_timer_callback(premature, self, wheel)
+local function worker_timer_callback(premature, self, timer_index)
+    local s = now()
     while not exiting() do
         if premature then
             return
         end
 
-        local hour_wheel = wheel.hour
-        local minute_wheel = wheel.min
-        local second_wheel = wheel.sec
-        local msec_wheel = wheel.msec
+        local wheels = self.wheels
 
+        local hour_wheel = wheels.hour
+        local minute_wheel = wheels.min
+        local second_wheel = wheels.sec
+        local msec_wheel = wheels.msec
 
-        local real_timer = wheel.real_timer
-
-        local callbacks, continue = wheel_move_to_next(msec_wheel)
-
-        for name, job in pairs(callbacks) do
-            if job.enable then
-                spawn(job_wrapper, job)
-            end
-
-            if not job.once then
-                job_re_cal_next_pointer(job, wheel)
-                insert_job_to_wheel(wheel, job)
-            end
-
-            callbacks[name] = nil
-        end
-
-        if continue then
-            callbacks, continue = wheel_move_to_next(second_wheel)
-
-            for name, job in pairs(callbacks) do
-                wheel_insert(msec_wheel, job.next_pointer.msec, job)
-                callbacks[name] = nil
-            end
-
-            if continue then
-                callbacks, continue = wheel_move_to_next(minute_wheel)
-    
-                for name, job in pairs(callbacks) do
-                    wheel_insert(second_wheel, job.next_pointer.second, job)
-                    callbacks[name] = nil
-                end
-
-                callbacks, continue = wheel_move_to_next(hour_wheel)
-
-                if continue then
-                    for name, job in pairs(callbacks) do
-                        wheel_insert(minute_wheel, job.next_pointer.minute, job)
-                        callbacks[name] = nil
-                    end
-                end
-            end
-        end
-    
-        -- print_wheel(self, wheel)
-        -- log(ERR, "")
-        
+        local real_timer = self.real_timers[timer_index]
         real_timer.alive = true
-        real_timer.counter.trigger = real_timer.counter.trigger + 1
-    
-        if real_timer.counter.trigger % self.opt.recreate_interval == 0 then
-            timer_at(1, worker_timer_callback, self, wheel)
+
+        while not is_empty_table(wheels.pending_jobs) do
+            real_timer.alive = true
+            real_timer.counter.trigger = real_timer.counter.trigger + 1
+
+            for name, job in pairs(wheels.pending_jobs) do
+
+                -- log(ERR, job)
+
+                if not job.once then
+                    job_re_cal_next_pointer(job, wheels)
+                    insert_job_to_wheel(self, job)
+                end
+
+                wheels.pending_jobs[name] = nil
+                job_wrapper(job)
+
+                break
+            end
+
+        end
+
+        -- wheels.pending_jobs = nil
+
+        if real_timer.counter.trigger > self.opt.recreate_interval == 0 then
+            real_timer.counter.trigger = 0
+            timer_at(0, worker_timer_callback, self, timer_index)
             break
         end
-    
-        sleep(0.1)
+
+        -- do
+        --     update_time()
+        --     if now() - s > 1 then
+        --         print_wheel(self, self.wheels)
+        --         log(ERR, "")
+        --         s = now()
+        --     end
+        -- end
+
+        
+
+        sleep(0.01)
     end
 end
 
 
 local function master_timer_callback(premature, self)
-    local init = true
-    local sleep_count = 0
-
     while not exiting() do
         if premature then
             return
@@ -499,33 +510,91 @@ local function master_timer_callback(premature, self)
 
         local wheels = self.wheels
 
-        if init then
-            init = false
-
-            for i = 1, opt_real_timer do
-                timer_at(0.1, worker_timer_callback, self, wheels[i])
-                real_timers[i].alive = true
+        for i = 1, opt_real_timer do
+            if not real_timers[i].alive then
+                timer_at(0, worker_timer_callback, self, i)
             end
-        
-        else
-            for i = 1, opt_real_timer do
-                real_timers[i].alive = false
-            end
-
-            if sleep_count < 5 then
-                sleep(1)
-            
-            else
-                for i = 1, opt_real_timer do
-                    if not real_timers[i].alive then
-                        timer_at(1, worker_timer_callback, self, wheels[i])
-                    end
-                end
-
-            end
-
         end
 
+        -- for i = 1, opt_real_timer do
+        --     real_timers[i].alive = false
+        -- end
+
+
+        local wheels = self.wheels
+
+        local hour_wheel = wheels.hour
+        local minute_wheel = wheels.min
+        local second_wheel = wheels.sec
+        local msec_wheel = wheels.msec
+
+        local callbacks = nil
+        local continue = false
+
+        callbacks, continue = wheel_move_to_next(msec_wheel)
+
+        if continue then
+            callbacks, continue = wheel_move_to_next(second_wheel)
+
+            -- for name, job in pairs(callbacks) do
+            --     wheel_insert(msec_wheel, job.next_pointer.msec, job)
+            --     callbacks[name] = nil
+            -- end
+
+            if continue then
+                callbacks, continue = wheel_move_to_next(minute_wheel)
+    
+                -- for name, job in pairs(callbacks) do
+                --     wheel_insert(second_wheel, job.next_pointer.second, job)
+                --     callbacks[name] = nil
+                -- end
+
+                callbacks, continue = wheel_move_to_next(hour_wheel)
+            end
+        end
+
+        callbacks = wheel_get_jobs(hour_wheel)
+
+        if callbacks then
+            for name, job in pairs(callbacks) do
+                wheel_insert(minute_wheel, job.next_pointer.minute, job)
+                callbacks[name] = nil
+            end
+        end
+
+        callbacks = wheel_get_jobs(minute_wheel)
+        
+        if callbacks then
+            for name, job in pairs(callbacks) do
+                wheel_insert(second_wheel, job.next_pointer.second, job)
+                callbacks[name] = nil
+            end
+        end
+
+        callbacks = wheel_get_jobs(second_wheel)
+        
+        if callbacks then
+            for name, job in pairs(callbacks) do
+                wheel_insert(msec_wheel, job.next_pointer.msec, job)
+                callbacks[name] = nil
+            end
+        end
+
+
+        callbacks = wheel_get_jobs(msec_wheel)
+
+        for name, job in pairs(callbacks) do
+            wheels.pending_jobs[name] = job
+            callbacks[name] = nil
+        end
+
+
+        -- while wheels.pending_jobs do
+        --     sleep(0.001)
+        -- end
+        
+
+        sleep(0.1)
     end
 end
 
@@ -533,19 +602,14 @@ end
 -- name: name of timer
 -- once: is it run once
 local function create(self ,name, callback, delay, once, args)
-    -- like round-robin
-    self.cur_real_timer_index = self.cur_real_timer_index == self.opt.real_timer and 1 or self.cur_real_timer_index + 1
-    local cur = self.cur_real_timer_index
-    local wheel = self.wheels[cur]
-
     if not name then
         name = tostring(math.random())
     end
 
-    local job = job_create(wheel, name, callback, delay, once, args)
+    local job = job_create(self, name, callback, delay, once, args)
     self.jobs[name] = job
 
-    return insert_job_to_wheel(wheel, job)
+    return insert_job_to_wheel(self, job)
 end
 
 
@@ -568,9 +632,6 @@ function _M:configure(options)
     -- enbale/diable entire timing system
     self.enable = false
 
-    -- each real timer has it own wheel
-    self.wheels = {}
-
     self.real_timers = {}
 
     self.jobs = {}
@@ -580,6 +641,14 @@ function _M:configure(options)
     self.cur_real_timer_index = 1
 
     self.default_name = 1
+
+    self.wheels = {
+        pending_jobs = {},
+        msec = wheel_init(10),
+        sec = wheel_init(60),
+        min = wheel_init(60),
+        hour = wheel_init(24),
+    }
 
     for i = 1, self.opt.real_timer do
         self.real_timers[i] = {
@@ -592,14 +661,6 @@ function _M:configure(options)
                 recreate = 0,
             }
         }
-
-        self.wheels[i] = {
-            real_timer = self.real_timers[i],
-            msec = wheel_init(10),
-            sec = wheel_init(60),
-            min = wheel_init(60),
-            hour = wheel_init(24),
-        }
     end
 end
 
@@ -610,7 +671,7 @@ function _M:start()
     -- start the master timer
     -- the task of the master timer is to check the status of each worker timer,
     -- and if a woker timer crash, it will recreate a new one.
-    timer_at(0, master_timer_callback, self)
+    timer_at(0.1, master_timer_callback, self)
 end
 
 
