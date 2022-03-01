@@ -1,3 +1,5 @@
+local semaphore_module = require "ngx.semaphore"
+
 local timer_at = ngx.timer.at
 local timer_every = ngx.timer.every
 local sleep = ngx.sleep
@@ -29,10 +31,9 @@ local spawn = ngx.thread.spawn
 
 local FOCUS_UPDATE_TIME = true
 
-local DEFAULT_THREADS = 1000
+local DEFAULT_THREADS = 10
 local DEFAULT_MAX_EXPIRE = 24 * 60 * 60
 local DEFAULT_RECREATE_INTERVAL = 50
-local DEFAULT_REAL_TIMER = 10
 
 local _M = {}
 
@@ -436,26 +437,41 @@ local function insert_job_to_wheel(self, job)
 end
 
 
-local function worker_timer_callback(premature, self, timer_index)
+local function worker_timer_callback(premature, self, thread_index)
+    local semaphore = self.semaphore
+    local thread = self.threads[thread_index]
+    local wheels = self.wheels
+
+    update_time()
     local s = now()
+
     while not exiting() do
         if premature then
             return
         end
 
-        local wheels = self.wheels
+        thread.alive = true
 
-        local hour_wheel = wheels.hour
-        local minute_wheel = wheels.min
-        local second_wheel = wheels.sec
-        local msec_wheel = wheels.msec
+        -- update_time()
+        -- if now() - s >= 1 then
+        --     print_wheel(self, self.wheels)
+        --     log(ERR, "")
+        -- end
 
-        local real_timer = self.real_timers[timer_index]
-        real_timer.alive = true
+        local ok, err = semaphore:wait(1)
+
+        -- update_time()
+
+        -- if ok then
+        --     log(ERR, "TTTTT, " .. now())
+
+        -- else 
+        --     log(ERR, "FFFFF, " .. now())
+        -- end
 
         while not is_empty_table(wheels.pending_jobs) do
-            real_timer.alive = true
-            real_timer.counter.trigger = real_timer.counter.trigger + 1
+            thread.alive = true
+            thread.counter.trigger = thread.counter.trigger + 1
 
             for name, job in pairs(wheels.pending_jobs) do
 
@@ -476,9 +492,9 @@ local function worker_timer_callback(premature, self, timer_index)
 
         -- wheels.pending_jobs = nil
 
-        if real_timer.counter.trigger > self.opt.recreate_interval == 0 then
-            real_timer.counter.trigger = 0
-            timer_at(0, worker_timer_callback, self, timer_index)
+        if thread.counter.trigger > self.opt.recreate_interval == 0 then
+            thread.counter.trigger = 0
+            timer_at(0, worker_timer_callback, self, thread_index)
             break
         end
 
@@ -491,27 +507,39 @@ local function worker_timer_callback(premature, self, timer_index)
         --     end
         -- end
 
+        -- if is_empty_table(wheels.pending_jobs) then
+        --     update_time()
+        --     log(ERR, "index = " .. thread_index .. ", time_s = " .. now())
+        -- end
+
+
+        -- if not is_empty_table(wheels.pending_jobs) then
+        --     log(ERR, "index = " .. thread_index .. ", time_e = " .. now())
+        -- end
+
         
 
-        sleep(0.01)
+        -- sleep(0.001)
+
     end
 end
 
 
 local function master_timer_callback(premature, self)
+    local semaphore = self.semaphore
+    local threads = self.threads
+    local opt_threads = self.opt.threads
+
     while not exiting() do
         if premature then
             return
         end
 
-        local real_timers = self.real_timers
-        -- local wheels = self.wheels
-        local opt_real_timer = self.opt.real_timer
+        -- update_time()
+        -- local s = now()
 
-        local wheels = self.wheels
-
-        for i = 1, opt_real_timer do
-            if not real_timers[i].alive then
+        for i = 1, opt_threads do
+            if not threads[i].alive then
                 timer_at(0, worker_timer_callback, self, i)
             end
         end
@@ -588,11 +616,12 @@ local function master_timer_callback(premature, self)
             callbacks[name] = nil
         end
 
-
-        -- while wheels.pending_jobs do
-        --     sleep(0.001)
-        -- end
-        
+        if not is_empty_table(wheels.pending_jobs) then
+            -- update_time()
+            -- log(ERR, "IIIII, " .. s)
+            -- log(ERR, "SSSSS, " .. now())
+            semaphore:post(opt_threads)
+        end
 
         sleep(0.1)
     end
@@ -618,13 +647,13 @@ function _M:configure(options)
 
     local opt = {
         -- max_expire = options and options.max_expire or DEFAULT_MAX_EXPIRE,
-        max_expire = 24 * 60 * 60,
+        max_expire = DEFAULT_MAX_EXPIRE,
 
         -- restart a timer after a certain number of this timer triggers
         recreate_interval = options and options.recreate_interval or DEFAULT_RECREATE_INTERVAL,
 
         -- number of timer will be created by OpenResty API
-        real_timer = options and options.real_timer or DEFAULT_REAL_TIMER
+        threads = options and options.threads or DEFAULT_THREADS
     }
 
     self.opt = opt
@@ -632,7 +661,7 @@ function _M:configure(options)
     -- enbale/diable entire timing system
     self.enable = false
 
-    self.real_timers = {}
+    self.threads = {}
 
     self.jobs = {}
 
@@ -642,6 +671,8 @@ function _M:configure(options)
 
     self.default_name = 1
 
+    self.semaphore = semaphore_module.new(0)
+
     self.wheels = {
         pending_jobs = {},
         msec = wheel_init(10),
@@ -650,8 +681,8 @@ function _M:configure(options)
         hour = wheel_init(24),
     }
 
-    for i = 1, self.opt.real_timer do
-        self.real_timers[i] = {
+    for i = 1, self.opt.threads do
+        self.threads[i] = {
             index = i,
             alive = false,
             counter = {
