@@ -143,10 +143,20 @@ describe("Plugin: prometheus (access via status API)", function()
 
   after_each(function()
     if status_client then
-      status_client:close()
+      local ok, err = status_client:close()
+
+      if not ok then
+        assert.same("expected", err)
+      end
+
     end
     if proxy_client then
-      proxy_client:close()
+      local ok, err = proxy_client:close()
+
+      if not ok then
+        assert.same("expected", err)
+      end
+      
     end
   end)
 
@@ -389,10 +399,20 @@ describe("Plugin: prometheus (access via status API)", function()
 
     local body
     helpers.wait_until(function()
-      local res = assert(status_client:send {
+      local res, _ = status_client:send({
         method  = "GET",
-        path    = "/metrics",
+        path    = "/metrics"
       })
+
+      if not res or res == "closed" then
+        status_client:close()
+        status_client = helpers.http_client("127.0.0.1", tcp_status_port, 20000)
+        res = assert(status_client:send({
+          method  = "GET",
+          path    = "/metrics"
+        }))
+      end
+
       body = assert.res_status(200, res)
       return not body:find('kong_upstream_target_health{upstream="mock-upstream-healthchecksoff"', nil, true)
     end, 15)
@@ -408,10 +428,20 @@ describe("Plugin: prometheus (access via status API)", function()
 
     local body
     helpers.wait_until(function()
-      local res = assert(status_client:send {
+      local res, _ = status_client:send({
         method  = "GET",
-        path    = "/metrics",
+        path    = "/metrics"
       })
+
+      if not res or res == "closed" then
+        status_client:close()
+        status_client = helpers.http_client("127.0.0.1", tcp_status_port, 20000)
+        res = assert(status_client:send({
+          method  = "GET",
+          path    = "/metrics"
+        }))
+      end
+
       body = assert.res_status(200, res)
       return not body:find('kong_upstream_target_health{upstream="mock-upstream",target="some-random-dns:80"', nil, true)
     end, 15)
