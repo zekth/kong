@@ -41,7 +41,7 @@ local ngx_now = ngx.now
 local ngx_worker_id = ngx.worker.id
 local ngx_worker_pid = ngx.worker.pid
 local ssl = require("ngx.ssl")
--- local resty_timer = require "resty.timer"
+local resty_timer = require "resty.timer"
 
 local new_tab
 local nkeys
@@ -1141,11 +1141,11 @@ local function checker_callback(self, health_mode)
   if not list_to_check[1] then
     self:log(DEBUG, "checking ", health_mode, " targets: nothing to do")
   else
-    local ok = ngx.timer.at(0, function ()
-        self:log(DEBUG, "checking ", health_mode, " targets: #", #list_to_check)
-        self:active_check_targets(list_to_check)
+    local timer = ngx.timer.at(0, function ()
+      ngx.log(ngx.ERR, "TTTTTT")
+      self:log(DEBUG, "checking ", health_mode, " targets: #", #list_to_check)
+      self:active_check_targets(list_to_check)
     end)
-
     -- local timer = resty_timer({
     --   interval = 0,
     --   recurring = false,
@@ -1156,7 +1156,7 @@ local function checker_callback(self, health_mode)
     --     self:active_check_targets(list_to_check)
     --   end,
     -- })
-    if not ok then
+    if not timer then
       self:log(ERR, "failed to create timer to check ", health_mode)
     end
   end
