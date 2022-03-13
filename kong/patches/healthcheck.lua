@@ -1142,7 +1142,6 @@ local function checker_callback(self, health_mode)
     self:log(DEBUG, "checking ", health_mode, " targets: nothing to do")
   else
     local timer = ngx.timer.at(0, function ()
-      ngx.log(ngx.ERR, "TTTTTT")
       self:log(DEBUG, "checking ", health_mode, " targets: #", #list_to_check)
       self:active_check_targets(list_to_check)
     end)

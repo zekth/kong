@@ -983,7 +983,7 @@ function _M:once(name, callback, delay, ...)
     assert(type(delay) == "number", "expected `delay to be a number")
     assert(delay >= 0, "expected `delay` to be greater than or equal to 0")
 
-    if delay >= MAX_EXPIRE or (delay ~= 0 and delay < 0.1)  then
+    if delay >= MAX_EXPIRE or (true and delay < 0.1)  then
         local ok, err = timer_at(delay, callback, ...)
         return ok ~= nil, err
     end
