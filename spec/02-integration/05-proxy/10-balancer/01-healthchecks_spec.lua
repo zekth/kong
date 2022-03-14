@@ -499,7 +499,7 @@ for _, strategy in helpers.each_strategy() do
       helpers.stop_kong()
     end)
 
-    it("create active health checks -- global certificate #only", function()
+    it("create active health checks -- global certificate", function()
       -- configure healthchecks
       bu.begin_testcase_setup(strategy, bp)
       local upstream_name, upstream_id = bu.add_upstream(bp, {
@@ -527,7 +527,7 @@ for _, strategy in helpers.each_strategy() do
       bu.poll_wait_health(upstream_id, "notlocalhost.test", "15555", "UNHEALTHY")
     end)
 
-    it("#db create active health checks -- upstream certificate #only", function()
+    it("#db create active health checks -- upstream certificate", function()
       local ssl_fixtures = require "spec.fixtures.ssl"
       local client = assert(helpers.admin_client())
       local res = client:post("/certificates", {
@@ -1299,7 +1299,7 @@ for _, strategy in helpers.each_strategy() do
               assert(count1.status_total < 3)
             end)
 
-            it("#flaky perform active health checks -- up then down", function()
+            it("#flaky perform active health checks -- up then down #only", function()
 
               for nfails = 1, 3 do
 
