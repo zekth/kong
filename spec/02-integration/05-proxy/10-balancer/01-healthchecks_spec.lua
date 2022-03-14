@@ -1299,7 +1299,7 @@ for _, strategy in helpers.each_strategy() do
               assert(count1.status_total < 3)
             end)
 
-            it("#flaky perform active health checks -- up then down #only", function()
+            it("#flaky perform active health checks -- up then down", function()
 
               for nfails = 1, 3 do
 
