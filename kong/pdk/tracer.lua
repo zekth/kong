@@ -287,10 +287,29 @@ local function connector_query_wrap(connector)
 end
 
 
+-- router wrapper
+local function wrap_router(router)
+  local exec_orig = router.exec
+
+  local function exec(ngx)
+    local span = kong.tracer:start_span(ngx.ctx, "router", nil)
+
+    local r = pack(exec_orig(ngx))
+
+    span:finish()
+
+    return unpack(r)
+  end
+
+  router.exec = exec
+end
+
+
 return {
   new = function()
     return new_tracer("noop") -- create noop global tracer by default
   end,
   -- helpers
   connector_query_wrap = connector_query_wrap,
+  wrap_router = wrap_router,
 }
