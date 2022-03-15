@@ -66,7 +66,7 @@ local function http_send_spans(premature, conf, spans)
   end
 
   local req = assert(otlp_export_request(spans))
-  ngx.log(ngx.NOTICE, inspect(req))
+  -- ngx.log(ngx.NOTICE, inspect(req))
 
   local pb_data = assert(to_pb(req))
 
@@ -96,8 +96,9 @@ local function http_send_spans(premature, conf, spans)
     ngx.log(ngx.ERR, "request failed: ", res.body)
   end
 
-  -- ngx.log(ngx.NOTICE, "sent single trace, status: ", res.status)
+  ngx.log(ngx.NOTICE, "sent single trace, status: ", res.status)
 end
+
 
 local function attach_balancer_data(ctx)
   local balancer_data = ngx.ctx.balancer_data
@@ -120,6 +121,7 @@ local function attach_balancer_data(ctx)
   end
 
 end
+
 
 -- collect trace and spans
 function OpenTelemetryHandler:log(conf) -- luacheck: ignore 212
