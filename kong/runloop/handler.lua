@@ -42,6 +42,7 @@ local clear_header = ngx.req.clear_header
 local http_version = ngx.req.http_version
 local unpack       = unpack
 local escape       = require("kong.tools.uri").escape
+local wrap_router = require "kong.pdk.tracer".wrap_router
 
 
 local is_http_module   = subsystem == "http"
@@ -786,6 +787,7 @@ do
       return nil, "could not create router: " .. err
     end
 
+    wrap_router(new_router)
     router = new_router
 
     if version then
