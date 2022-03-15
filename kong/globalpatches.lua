@@ -69,6 +69,28 @@ return function(options)
 
 
 
+  do
+    local timer = require("kong.timer")
+
+    if options.cli or options.rbusted then
+      timer:configure({ threads = 32 })
+      timer:start()
+
+    else
+      timer:configure({})
+    end
+
+    _G.ngx.timer.at = function(delay, callback, ...)
+      return timer:once(nil, callback, delay, ...)
+    end
+
+    _G.ngx.timer.every = function(interval, callback, ...)
+      return timer:every(nil, callback, interval, ...)
+    end
+  end
+
+
+
   do  -- implement a Lua based shm for: cli (and hence rbusted)
 
     if options.cli then
@@ -426,20 +448,6 @@ return function(options)
       toip = client.toip
     end
   end
-
-  -- do
-  --   local timer = require("kong.timer")
-  --   timer:configure()
-  --   timer:start()
-
-  --   _G.ngx.timer.at = function(delay, callback, ...)
-  --     return timer:create_once(nil, callback, delay, table.unpack({ ... }))
-  --   end
-
-  --   _G.ngx.timer.every = function(delay, callback, ...)
-  --     return timer:create_every(nil, callback, delay, table.unpack({ ... }))
-  --   end
-  -- end
 
   require "kong.deprecation".init(options.cli)
 end

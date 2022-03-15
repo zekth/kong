@@ -284,7 +284,7 @@ for _, strategy in helpers.each_strategy() do
         end)
       end)
 
-      it("broadcasts an event with a delay", function()
+      it("broadcasts an event with a delay #only", function()
         local cluster_events_1 = assert(kong_cluster_events.new {
           db = db,
           node_id = uuid_1,
@@ -309,7 +309,7 @@ for _, strategy in helpers.each_strategy() do
         assert(cluster_events_1:poll())
         assert.spy(spy_func).was_not_called() -- still not called
 
-        ngx.sleep(delay) -- go past our desired `nbf` delay
+        ngx.sleep(delay + 3) -- go past our desired `nbf` delay
 
         assert(cluster_events_1:poll())
         assert.spy(spy_func).was_called(1) -- called
@@ -342,7 +342,7 @@ for _, strategy in helpers.each_strategy() do
         assert(cluster_events_1:poll())
         assert.spy(spy_func).was_not_called() -- still not called
 
-        ngx.sleep(delay) -- go past our desired `nbf` delay
+        ngx.sleep(delay + 3) -- go past our desired `nbf` delay
 
         assert(cluster_events_1:poll())
         assert.spy(spy_func).was_called(1) -- called
