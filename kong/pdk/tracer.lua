@@ -180,7 +180,7 @@ function span_mt:finish(end_time_unix_nano)
   if end_time_unix_nano ~= nil then
     assert(type(end_time_unix_nano) == "number" and end_time_unix_nano >= 0,
     "invalid span finish timestamp")
-    assert(end_time_unix_nano - self.end_time_unix_nano >= 0, "invalid span duration")
+    assert(end_time_unix_nano - self.start_time_unix_nano >= 0, "invalid span duration")
   else
     end_time_unix_nano = ffi_time_unix_nano()
   end
