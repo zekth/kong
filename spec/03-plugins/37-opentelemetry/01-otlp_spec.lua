@@ -42,7 +42,14 @@ describe("otlp", function()
     ngx.say(inspect(req))
   end)
 
-  it("to_pb", function ()
+  it("pb #attributes", function ()
+    local attr = { key = "k1", value = { string_value = "v1" } }
+    local pb_bytes = assert(pb.encode("KeyValue", attr))
+    local decoded_attr = pb.decode("KeyValue", pb_bytes)
+    print(inspect(decoded_attr))
+  end)
+
+  it("to_pb #req", function ()
     local span = assert(kong.tracer:start_span(ngx.ctx, "test"))
     span:finish()
 

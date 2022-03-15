@@ -7,6 +7,7 @@ return {
         type = "record",
         fields = {
           { http_endpoint = typedefs.url }, -- OTLP/HTTP /v1/traces
+          { http_headers = typedefs.headers }, -- Extra HTTP headers
         },
     }, },
   },

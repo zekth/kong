@@ -23,7 +23,7 @@ local function _to_otlp_attributes(tab)
   for k, v in pairs(tab) do
     insert(attributes, {
       key = k,
-      value = v,
+      value = { string_value = tostring(v) }, -- AnyValue, must be a Lua table
     })
   end
   return attributes
@@ -74,11 +74,20 @@ end
 -- new otlp export request
 local function otlp_export_request(spans)
   local req = new_tab(0, 1)
+  -- ResourceSpans
   req.resource_spans = new_tab(1, 0)
-  req.resource_spans[1] = {
+  req.resource_spans[1] = { -- ResourceSpans
+    resource = { 
+      attributes = {
+        { key = "service.name", value = { string_value = "kong" } },
+        { key = "service", value = { string_value = "kong" } }
+      },
+     },
     instrumentation_library_spans = new_tab(1, 0),
   }
+  -- InstrumentationLibrarySpans
   local lib_spans = {
+    instrumentation_library = { name = "opentelemetry-plugin", version = "0.0.1" },
     spans = new_tab(#spans, 0),
   }
   for _, span in ipairs(spans) do
