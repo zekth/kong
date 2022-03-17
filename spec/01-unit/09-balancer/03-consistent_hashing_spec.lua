@@ -463,14 +463,14 @@ describe("[consistent_hashing]", function()
         end
       })
       add_target(b, "12.34.56.78", 123, 100)
-      ngx.sleep(0)
+      ngx.sleep(0.2)
       assert.equal(1, count_add)
       assert.equal(0, count_remove)
 
       --b:removeHost("12.34.56.78", 123)
       b.targets[1].addresses[1].disabled = true
       b:deleteDisabledAddresses(b.targets[1])
-      ngx.sleep(0)
+      ngx.sleep(0.2)
       assert.equal(1, count_add)
       assert.equal(1, count_remove)
     end)
@@ -505,14 +505,14 @@ describe("[consistent_hashing]", function()
         { name = "mashape.com", address = "12.34.56.78" },
       })
       add_target(b, "mashape.com", 123, 100)
-      ngx.sleep(0)
+      ngx.sleep(0.2)
       assert.equal(2, count_add)
       assert.equal(0, count_remove)
 
       b.targets[1].addresses[1].disabled = true
       b.targets[1].addresses[2].disabled = true
       b:deleteDisabledAddresses(b.targets[1])
-      ngx.sleep(0)
+      ngx.sleep(0.2)
       assert.equal(2, count_add)
       assert.equal(2, count_remove)
     end)
@@ -553,7 +553,7 @@ describe("[consistent_hashing]", function()
         { name = "mashape.com", target = "mashape2.com", port = 8002, weight = 5 },
       })
       add_target(b, "mashape.com", 123, 100)
-      ngx.sleep(0)
+      ngx.sleep(0.2)
       assert.equal(2, count_add)
       assert.equal(0, count_remove)
 
@@ -561,7 +561,7 @@ describe("[consistent_hashing]", function()
       b.targets[1].addresses[1].disabled = true
       b.targets[1].addresses[2].disabled = true
       b:deleteDisabledAddresses(b.targets[1])
-      ngx.sleep(0)
+      ngx.sleep(0.2)
       assert.equal(2, count_add)
       assert.equal(2, count_remove)
     end)
