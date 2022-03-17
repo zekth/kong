@@ -213,7 +213,7 @@ describe("cache_warmup", function()
 
     assert.truthy(cache_warmup.execute({"my_entity", "services"}))
 
-    ngx.sleep(0) -- yield so that async DNS caching happens
+    ngx.sleep(0.2) -- yield so that async DNS caching happens
 
     -- `my_entity` isn't a core entity; lookup is on client cache
     assert.same(kong.cache:get("111").bbb, 222)
@@ -266,7 +266,7 @@ describe("cache_warmup", function()
 
     assert.truthy(cache_warmup.execute({"my_entity", "services"}))
 
-    ngx.sleep(0.001) -- yield so that async DNS caching happens
+    ngx.sleep(0.2) -- yield so that async DNS caching happens
 
     -- `my_entity` isn't a core entity; lookup is on client cache
     assert.same(kong.cache:get("111").bbb, 222)
