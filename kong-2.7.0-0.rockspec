@@ -60,6 +60,7 @@ build = {
     ["kong.globalpatches"] = "kong/globalpatches.lua",
     ["kong.error_handlers"] = "kong/error_handlers.lua",
     ["kong.hooks"] = "kong/hooks.lua",
+    ["kong.timer"] = "kong/timer.lua",
 
     ["kong.conf_loader"] = "kong/conf_loader/init.lua",
     ["kong.conf_loader.listeners"] = "kong/conf_loader/listeners.lua",
