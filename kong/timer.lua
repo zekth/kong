@@ -913,6 +913,8 @@ local function create(self ,name, callback, delay, once, args)
         return false, "already exists timer"
     end
 
+    update_all_wheels(self)
+
     local job = job_create(self, name, callback, delay, once, args)
     job_enable(job)
     jobs[name] = job
@@ -927,7 +929,7 @@ local function create(self ,name, callback, delay, once, args)
         return true, nil
     end
 
-    update_all_wheels(self)
+    
 
     return insert_job_to_wheel(self, job)
 end
