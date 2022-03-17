@@ -693,7 +693,7 @@ local function featch_all_expired_jobs(self)
 end
 
 
-local function update_all_wheels(self, min_delta)
+local function update_all_wheels(self)
     local wheels = self.wheels
 
     local hour_wheel = wheels.hour
@@ -703,11 +703,10 @@ local function update_all_wheels(self, min_delta)
 
     featch_all_expired_jobs(self)
 
+    update_time()
     self.real_time = now()
-    local delta = floor(max((self.real_time - self.expected_time) / 0.1, min_delta))
-    local expected_time = self.expected_time
 
-    if delta < 1 then
+    while self.real_time > self.expected_time do
         local _, continue = wheel_move_to_next(msec_wheel)
 
         if continue then
@@ -724,31 +723,8 @@ local function update_all_wheels(self, min_delta)
         end
 
         featch_all_expired_jobs(self)
-        expected_time = expected_time + 0.1
-
-    else
-        for i = 1, delta do
-            local _, continue = wheel_move_to_next(msec_wheel)
-
-            if continue then
-                _, continue = wheel_move_to_next(second_wheel)
-
-                if continue then
-                    _, continue = wheel_move_to_next(minute_wheel)
-
-                    if continue then
-                        _, _ = wheel_move_to_next(hour_wheel)
-                    end
-
-                end
-            end
-
-            featch_all_expired_jobs(self)
-            expected_time = expected_time + 0.1
-        end
+        self.expected_time =  self.expected_time + 0.1
     end
-
-    self.expected_time = expected_time
 end
 
 
@@ -851,7 +827,7 @@ local function worker_timer_callback(premature, self, thread_index)
                         jobs[name] = nil
 
                     elseif job_is_runable(job) then
-                        update_all_wheels(self, 0)
+                        update_all_wheels(self)
                         job_re_cal_next_pointer(job, wheels)
                         insert_job_to_wheel(self, job)
                     end
@@ -950,6 +926,8 @@ local function create(self ,name, callback, delay, once, args)
 
         return true, nil
     end
+
+    update_all_wheels(self)
 
     return insert_job_to_wheel(self, job)
 end
@@ -1139,6 +1117,8 @@ function _M:run(name)
             local job = job_copy(self, old_job)
             job_enable(job)
             jobs[name] = job
+
+            update_all_wheels(self)
 
             local ok, err = insert_job_to_wheel(self, job)
 
