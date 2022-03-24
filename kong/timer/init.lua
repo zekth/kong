@@ -20,10 +20,10 @@ local exiting = ngx.worker.exiting
 local now = ngx.now
 local update_time = ngx.update_time
 
-local job_module = require("resty.timer.job")
-local utils_module = require("resty.timer.utils")
-local wheel_module = require("resty.timer.wheel")
-local constants = require("resty.timer.constants")
+local job_module = require("kong.timer.job")
+local utils_module = require("kong.timer.utils")
+local wheel_module = require("kong.timer.wheel")
+local constants = require("kong.timer.constants")
 
 local _M = {}
 

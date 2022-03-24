@@ -14,7 +14,7 @@ local ERR = ngx.ERR
 
 local now = ngx.now
 
-local utils = require("resty.timer.utils")
+local utils = require("kong.timer.utils")
 
 local _M = {}
 
