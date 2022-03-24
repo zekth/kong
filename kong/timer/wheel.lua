@@ -3,6 +3,10 @@ local log = ngx.log
 local ERR = ngx.ERR
 -- luacheck: pop
 
+local utils = require("kong.timer.utils")
+
+local assert = utils.assert
+
 local _M = {}
 
 local meta_table = {
@@ -16,13 +20,13 @@ end
 
 
 function _M:cal_pointer(pointer, offset)
-    local nelt = self.nelt
+    local nelts = self.nelts
     local p = pointer
     local old = p
 
-    p = (p + offset) % (nelt + 1)
+    p = (p + offset) % (nelts + 1)
 
-    if old + offset > nelt then
+    if old + offset > nelts then
         return p + 1, true
     end
 
@@ -31,13 +35,13 @@ end
 
 
 function _M:insert(pointer, job)
-    assert(self.array)
+    assert(self.slots)
     assert(pointer > 0)
 
-    local _job = self.array[pointer][job.name]
+    local _job = self.slots[pointer][job.name]
 
     if not _job or not _job:is_runable() then
-        self.array[pointer][job.name] = job
+        self.slots[pointer][job.name] = job
 
     else
         return false, "already exists job"
@@ -51,29 +55,29 @@ function _M:move_to_next()
     local pointer, is_move_to_end = self:cal_pointer(self.pointer, 1)
     self.pointer = pointer
 
-    return self.array[self.pointer], is_move_to_end
+    return self.slots[self.pointer], is_move_to_end
 end
 
 
 function _M:get_jobs()
-    return self.array[self.pointer]
+    return self.slots[self.pointer]
 end
 
 
 function _M:get_jobs_by_pointer(pointer)
-    return self.array[pointer]
+    return self.slots[pointer]
 end
 
 
-function _M.new(nelt)
+function _M.new(nelts)
     local self = {
         pointer = 1,
-        nelt = nelt,
-        array = {},
+        nelts = nelts,
+        slots = {},
     }
 
-    for i = 1, self.nelt do
-        self.array[i] = setmetatable({ }, { __mode = "v" })
+    for i = 1, self.nelts do
+        self.slots[i] = setmetatable({ }, { __mode = "v" })
     end
 
     return setmetatable(self, meta_table)

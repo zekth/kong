@@ -25,6 +25,8 @@ local utils_module = require("kong.timer.utils")
 local wheel_module = require("kong.timer.wheel")
 local constants = require("kong.timer.constants")
 
+local assert = utils_module.assert
+
 local _M = {}
 
 
@@ -52,13 +54,18 @@ local function wake_up_mover_timer(self)
 end
 
 
-local function update_closet(self)
-    local old_closet = self.closet
+-- calculate how long until the next timer expires
+local function update_closest(self)
+    local old_closest = self.closest
     local delay = 0
     local msec_wheel = self.wheels.msec
     local cur_msec_pointer = msec_wheel:get_cur_pointer()
-    for i = 1, 9 do
-        local pointer, is_move_to_start = msec_wheel:cal_pointer(cur_msec_pointer, i)
+
+    -- `constants.MSEC_WHEEL_SLOTS - 1` means
+    -- ignore the current slot
+    for i = 1, constants.MSEC_WHEEL_SLOTS - 1 do
+        local pointer, is_move_to_start =
+            msec_wheel:cal_pointer(cur_msec_pointer, i)
 
         delay = delay + constants.RESOLUTION
 
@@ -75,9 +82,9 @@ local function update_closet(self)
 
     -- TODO: to calculate this value, a baseline is needed,
     --  i.e. the time when the super timer was last woken up.
-    self.closet = delay
+    self.closest = delay
 
-    return delay < old_closet
+    return delay < old_closest
 end
 
 
@@ -260,8 +267,11 @@ local function mover_timer_callback(premature, self)
         -- TODO: check the return value
         semaphore_mover:wait(1)
 
-        local is_no_pending_jobs = utils_module.is_empty_table(wheels.pending_jobs)
-        local is_no_ready_jobs = utils_module.is_empty_table(wheels.ready_jobs)
+        local is_no_pending_jobs =
+            utils_module.is_empty_table(wheels.pending_jobs)
+
+        local is_no_ready_jobs =
+            utils_module.is_empty_table(wheels.ready_jobs)
 
         if not is_no_pending_jobs then
             semaphore_worker:post(opt_threads)
@@ -319,7 +329,7 @@ local function worker_timer_callback(premature, self, thread_index)
             wake_up_mover_timer(self)
         end
 
-        if thread.counter.runs > self.opt.recreate_interval == 0 then
+        if thread.counter.runs > self.opt.restart_thread_after_runs == 0 then
             thread.counter.runs = 0
             -- TODO: check return value
             timer_at(0, worker_timer_callback, self, thread_index)
@@ -368,10 +378,10 @@ local function super_timer_callback(premature, self)
                 wake_up_mover_timer(self)
             end
 
-            update_closet(self)
-            local closet = max(self.closet, constants.RESOLUTION)
-            self.closet = huge
-            semaphore_super:wait(closet)
+            update_closest(self)
+            local closest = max(self.closest, constants.RESOLUTION)
+            self.closest = huge
+            semaphore_super:wait(closest)
 
         else
             sleep(constants.RESOLUTION)
@@ -419,17 +429,25 @@ function _M:configure(options)
     if options then
         assert(type(options) == "table", "expected `options` to be a table")
 
-        if options.recreate_interval then
-            assert(type(options.recreate_interval) == "number", "expected `recreate_interval` to be a number")
-            assert(options.recreate_interval > 0, "expected `recreate_interval` to be greater than 0")
+        if options.restart_thread_after_runs then
+            assert(type(options.restart_thread_after_runs) == "number",
+                "expected `restart_thread_after_runs` to be a number")
 
-            local _, tmp = modf(options.recreate_interval)
-            assert(tmp == 0, "expected `recreate_interval` to be a integer")
+            assert(options.restart_thread_after_runs > 0,
+                "expected `restart_thread_after_runs` to be greater than 0")
+
+            local _, tmp = modf(options.restart_thread_after_runs)
+
+            assert(tmp == 0,
+                "expected `restart_thread_after_runs` to be a integer")
         end
 
         if options.threads then
-            assert(type(options.threads) == "number",  "expected `threads` to be a number")
-            assert(options.threads > 0, "expected `threads` to be greater than 0")
+            assert(type(options.threads) == "number",
+                "expected `threads` to be a number")
+
+            assert(options.threads > 0,
+            "expected `threads` to be greater than 0")
 
             local _, tmp = modf(options.threads)
             assert(tmp == 0, "expected `threads` to be a integer")
@@ -437,14 +455,20 @@ function _M:configure(options)
     end
 
     local opt = {
-        -- restart a timer after a certain number of this timer runs
-        recreate_interval = options and options.recreate_interval or constants.DEFAULT_RECREATE_INTERVAL,
+        -- restart the thread after every n jobs have been run
+        restart_thread_after_runs = options
+            and options.restart_thread_after_runsor
+            or constants.DEFAULT_RESTART_THREAD_AFTER_RUNS,
 
         -- number of timer will be created by OpenResty API
-        threads = options and options.threads or constants.DEFAULT_THREADS,
+        threads = options
+            and options.threads
+            or constants.DEFAULT_THREADS,
 
         -- call function `ngx.update_time` every run of timer job
-        fouce_update_time = options and options.fouce_update_time or constants.DEFAULT_FOCUS_UPDATE_TIME,
+        fouce_update_time = options
+            and options.fouce_update_time
+            or constants.DEFAULT_FOCUS_UPDATE_TIME,
     }
 
     self.opt = opt
@@ -469,7 +493,7 @@ function _M:configure(options)
 
     self.destory = false
 
-    self.closet = huge
+    self.closest = huge
 
     self.semaphore_super = semaphore.new(0)
 
@@ -479,10 +503,12 @@ function _M:configure(options)
 
     self.wheels = {
         -- will be move to `pending_jobs` by function `mover_timer_callback`
-        -- the function `fetch_all_expired_jobs` adds all expired job to this table
+        -- the function `fetch_all_expired_jobs`
+        -- adds all expired job to this table
         ready_jobs = {},
 
-        -- each job in this table will be run by function `worker_timer_callback`
+        -- each job in this table will
+        -- be run by function `worker_timer_callback`
         pending_jobs = {},
 
         -- 100ms per slot
@@ -555,7 +581,10 @@ function _M:once(name, callback, delay, ...)
     assert(type(delay) == "number", "expected `delay to be a number")
     assert(delay >= 0, "expected `delay` to be greater than or equal to 0")
 
-    if delay >= constants.MAX_EXPIRE or (delay ~= 0 and delay < constants.RESOLUTION) or not self.configured then
+    if delay >= constants.MAX_EXPIRE
+        or (delay ~= 0 and delay < constants.RESOLUTION)
+        or not self.configured then
+
         local ok, err = timer_at(delay, callback, ...)
         return ok ~= nil, err
     end
@@ -572,7 +601,10 @@ function _M:every(name, callback, interval, ...)
     assert(type(interval) == "number", "expected `interval to be a number")
     assert(interval > 0, "expected `interval` to be greater than or equal to 0")
 
-    if interval >= constants.MAX_EXPIRE or interval < constants.RESOLUTION or not self.configured then
+    if interval >= constants.MAX_EXPIRE
+        or interval < constants.RESOLUTION
+        or not self.configured then
+
         local ok, err = timer_every(interval, callback, ...)
         return ok ~= nil, err
     end
@@ -593,7 +625,8 @@ function _M:run(name)
     if old_job then
 
         if not old_job:is_runable() then
-            return create(self, old_job.name, old_job.callback, old_job.delay.origin, old_job:is_once(), old_job.args)
+            return create(self, old_job.name, old_job.callback,
+                old_job.delay, old_job:is_once(), old_job.args)
 
         else
             return false, "running"
