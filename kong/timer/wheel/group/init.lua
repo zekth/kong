@@ -36,6 +36,38 @@ local meta_table = {
 }
 
 
+-- insert a job into the wheel group
+function _M:insert_job(job)
+    local ok, err
+    local hour_wheel = self.hour
+    local minute_wheel = self.min
+    local second_wheel = self.sec
+    local msec_wheel = self.msec
+
+    if job.next_pointer.hour ~= 0 then
+        ok, err = hour_wheel:insert(job.next_pointer.hour, job)
+
+    elseif job.next_pointer.minute ~= 0 then
+        ok, err = minute_wheel:insert(job.next_pointer.minute, job)
+
+    elseif job.next_pointer.second ~= 0 then
+        ok, err = second_wheel:insert(job.next_pointer.second, job)
+
+    elseif job.next_pointer.msec ~= 0 then
+        ok, err = msec_wheel:insert(job.next_pointer.msec, job)
+
+    else
+        assert(false, "unexpected error")
+    end
+
+    if not ok then
+        return false, err
+    end
+
+    return true, nil
+end
+
+
 function _M.new()
     local self = {
         -- will be move to `pending_jobs` by function `mover_timer_callback`

@@ -218,40 +218,6 @@ local function update_all_wheels(self)
 end
 
 
--- insert a job into the wheel group
-local function insert_job_to_wheel(self, job)
-    local ok, err
-
-    local wheels = self.wheels
-    local hour_wheel = wheels.hour
-    local minute_wheel = wheels.min
-    local second_wheel = wheels.sec
-    local msec_wheel = wheels.msec
-
-    if job.next_pointer.hour ~= 0 then
-        ok, err = hour_wheel:insert(job.next_pointer.hour, job)
-
-    elseif job.next_pointer.minute ~= 0 then
-        ok, err = minute_wheel:insert(job.next_pointer.minute, job)
-
-    elseif job.next_pointer.second ~= 0 then
-        ok, err = second_wheel:insert(job.next_pointer.second, job)
-
-    elseif job.next_pointer.msec ~= 0 then
-        ok, err = msec_wheel:insert(job.next_pointer.msec, job)
-
-    else
-        assert(false, "unexpected error")
-    end
-
-    if not ok then
-        return false, err
-    end
-
-    return true, nil
-end
-
-
 -- move all jobs from `self.wheels.ready_jobs` to `self.wheels.pending_jobs`
 -- wake up the worker timer
 local function mover_timer_callback(premature, self)
@@ -320,7 +286,7 @@ local function worker_timer_callback(premature, self, thread_index)
                 elseif job:is_runable() then
                     update_all_wheels(self)
                     job:re_cal_next_pointer(wheels)
-                    insert_job_to_wheel(self, job)
+                    wheels:insert_job(job)
                     wake_up_super_timer(self)
                 end
             end
@@ -392,6 +358,7 @@ end
 
 
 local function create(self ,name, callback, delay, once, args)
+    local wheels = self.wheels
     local jobs = self.jobs
     if not name then
         name = tostring(math.random())
@@ -403,7 +370,7 @@ local function create(self ,name, callback, delay, once, args)
 
     update_all_wheels(self)
 
-    local job = job_module.new(self.wheels, name, callback, delay, once, args)
+    local job = job_module.new(wheels, name, callback, delay, once, args)
     job:enable()
     jobs[name] = job
 
@@ -414,7 +381,7 @@ local function create(self ,name, callback, delay, once, args)
         return true, nil
     end
 
-    local ok, err = insert_job_to_wheel(self, job)
+    local ok, err = wheels:insert_job(job)
 
     wake_up_super_timer(self)
 
