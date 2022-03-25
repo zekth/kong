@@ -36,6 +36,40 @@ local meta_table = {
 }
 
 
+-- calculate how long until the next timer expires
+function _M:update_closest()
+    local old_closest = self.closest
+    local delay = 0
+    local msec_wheel = self.msec
+    local cur_msec_pointer = msec_wheel:get_cur_pointer()
+
+    -- `constants.MSEC_WHEEL_SLOTS - 1` means
+    -- ignore the current slot
+    for i = 1, constants.MSEC_WHEEL_SLOTS - 1 do
+        local pointer, is_move_to_start =
+            msec_wheel:cal_pointer(cur_msec_pointer, i)
+
+        delay = delay + constants.RESOLUTION
+
+        if is_move_to_start then
+            break
+        end
+
+        local jobs = msec_wheel:get_jobs_by_pointer(pointer)
+
+        if not utils_module.is_empty_table(jobs) then
+            break
+        end
+    end
+
+    -- TODO: to calculate this value, a baseline is needed,
+    --  i.e. the time when the super timer was last woken up.
+    self.closest = delay
+
+    return delay < old_closest
+end
+
+
 -- do the following things
 -- * add all expired jobs from wheels to `wheels.ready_jobs`
 -- * move some jobs from higher wheel to lower wheel
@@ -197,6 +231,8 @@ function _M.new()
     local self = {
         real_time = 0,
         expected_time = 0,
+
+        closest = 0,
 
         -- will be move to `pending_jobs` by function `mover_timer_callback`
         -- the function `fetch_all_expired_jobs`

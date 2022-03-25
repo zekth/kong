@@ -55,40 +55,6 @@ local function wake_up_mover_timer(self)
 end
 
 
--- calculate how long until the next timer expires
-local function update_closest(self)
-    local old_closest = self.closest
-    local delay = 0
-    local msec_wheel = self.wheels.msec
-    local cur_msec_pointer = msec_wheel:get_cur_pointer()
-
-    -- `constants.MSEC_WHEEL_SLOTS - 1` means
-    -- ignore the current slot
-    for i = 1, constants.MSEC_WHEEL_SLOTS - 1 do
-        local pointer, is_move_to_start =
-            msec_wheel:cal_pointer(cur_msec_pointer, i)
-
-        delay = delay + constants.RESOLUTION
-
-        if is_move_to_start then
-            break
-        end
-
-        local jobs = msec_wheel:get_jobs_by_pointer(pointer)
-
-        if not utils_module.is_empty_table(jobs) then
-            break
-        end
-    end
-
-    -- TODO: to calculate this value, a baseline is needed,
-    --  i.e. the time when the super timer was last woken up.
-    self.closest = delay
-
-    return delay < old_closest
-end
-
-
 -- move all jobs from `self.wheels.ready_jobs` to `self.wheels.pending_jobs`
 -- wake up the worker timer
 local function mover_timer_callback(premature, self)
@@ -216,9 +182,9 @@ local function super_timer_callback(premature, self)
                 wake_up_mover_timer(self)
             end
 
-            update_closest(self)
-            local closest = max(self.closest, constants.RESOLUTION)
-            self.closest = huge
+            wheels:update_closest()
+            local closest = max(wheels.closest, constants.RESOLUTION)
+            wheels.closest = huge
             semaphore_super:wait(closest)
 
         else
@@ -325,8 +291,6 @@ function _M:configure(options)
     self.mover_timer = false
 
     self.destory = false
-
-    self.closest = huge
 
     self.semaphore_super = semaphore.new(0)
 
