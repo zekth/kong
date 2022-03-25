@@ -1,5 +1,12 @@
+local semaphore = require "ngx.semaphore"
+
 -- TODO: use it to readuce overhead
 -- local new_tab = require "table.new"
+
+local max = math.max
+local modf = math.modf
+local huge = math.huge
+local abs = math.abs
 
 local setmetatable = setmetatable
 
@@ -8,9 +15,14 @@ local log = ngx.log
 local ERR = ngx.ERR
 -- luacheck: pop
 
+local timer_at = ngx.timer.at
+local timer_every = ngx.timer.every
+local sleep = ngx.sleep
+local exiting = ngx.worker.exiting
 local now = ngx.now
 local update_time = ngx.update_time
 
+local job_module = require("kong.timer.job")
 local utils_module = require("kong.timer.utils")
 local wheel_module = require("kong.timer.wheel")
 local constants = require("kong.timer.constants")
