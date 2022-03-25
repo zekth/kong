@@ -65,7 +65,8 @@ build = {
     ["kong.timer.constants"] = "kong/timer/constants.lua",
     ["kong.timer.job"] = "kong/timer/job.lua",
     ["kong.timer.utils"] = "kong/timer/utils.lua",
-    ["kong.timer.wheel"] = "kong/timer/wheel.lua",
+    ["kong.timer.wheel"] = "kong/timer/wheel/init.lua",
+    ["kong.timer.wheel.group"] = "kong/timer/wheel/group/init.lua",
 
     ["kong.conf_loader"] = "kong/conf_loader/init.lua",
     ["kong.conf_loader.listeners"] = "kong/conf_loader/listeners.lua",
