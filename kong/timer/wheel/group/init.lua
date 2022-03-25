@@ -36,6 +36,131 @@ local meta_table = {
 }
 
 
+-- do the following things
+-- * add all expired jobs from wheels to `wheels.ready_jobs`
+-- * move some jobs from higher wheel to lower wheel
+function _M:fetch_all_expired_jobs()
+    local hour_wheel = self.hour
+    local minute_wheel = self.min
+    local second_wheel = self.sec
+    local msec_wheel = self.msec
+
+
+    local callbacks = hour_wheel:get_jobs()
+
+    if callbacks then
+        for name, job in pairs(callbacks) do
+
+            local next = job.next_pointer
+
+            if next.minute ~= 0 then
+                minute_wheel:insert(job.next_pointer.minute, job)
+
+            elseif next.second ~= 0 then
+                second_wheel:insert(job.next_pointer.second, job)
+
+            elseif next.msec ~= 0 then
+                msec_wheel:insert(job.next_pointer.msec, job)
+
+            else
+                self.ready_jobs[name] = job
+            end
+
+            callbacks[name] = nil
+        end
+    end
+
+    callbacks = minute_wheel:get_jobs()
+
+    if callbacks then
+        for name, job in pairs(callbacks) do
+
+            if job:is_runable() then
+                local next = job.next_pointer
+
+                if next.second ~= 0 then
+                    second_wheel:insert(job.next_pointer.second, job)
+
+                elseif next.msec ~= 0 then
+                    msec_wheel:insert(job.next_pointer.msec, job)
+
+                else
+                    self.ready_jobs[name] = job
+                end
+            end
+
+            callbacks[name] = nil
+        end
+    end
+
+    callbacks = second_wheel:get_jobs()
+
+    if callbacks then
+        for name, job in pairs(callbacks) do
+
+            if job:is_runable() then
+                local next = job.next_pointer
+
+                if next.msec ~= 0 then
+                    msec_wheel:insert(job.next_pointer.msec, job)
+
+                else
+                    self.ready_jobs[name] = job
+                end
+            end
+
+            callbacks[name] = nil
+        end
+    end
+
+
+    callbacks = msec_wheel:get_jobs()
+
+    if callbacks then
+        for name, job in pairs(callbacks) do
+            if job:is_runable() then
+                self.ready_jobs[name] = job
+            end
+
+            callbacks[name] = nil
+        end
+    end
+end
+
+
+function _M:sync_time()
+    local hour_wheel = self.hour
+    local minute_wheel = self.min
+    local second_wheel = self.sec
+    local msec_wheel = self.msec
+
+    self:fetch_all_expired_jobs()
+
+    update_time()
+    self.real_time = now()
+
+    while utils_module.float_compare(self.real_time, self.expected_time) == 1 do
+        local _, continue = msec_wheel:move_to_next()
+
+        if continue then
+            _, continue = second_wheel:move_to_next()
+
+            if continue then
+                _, continue = minute_wheel:move_to_next()
+
+                if continue then
+                    _, _ = hour_wheel:move_to_next()
+                end
+
+            end
+        end
+
+        self:fetch_all_expired_jobs()
+        self.expected_time =  self.expected_time + constants.RESOLUTION
+    end
+end
+
+
 -- insert a job into the wheel group
 function _M:insert_job(job)
     local ok, err
@@ -70,6 +195,9 @@ end
 
 function _M.new()
     local self = {
+        real_time = 0,
+        expected_time = 0,
+
         -- will be move to `pending_jobs` by function `mover_timer_callback`
         -- the function `fetch_all_expired_jobs`
         -- adds all expired job to this table
