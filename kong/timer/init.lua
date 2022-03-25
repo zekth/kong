@@ -22,7 +22,6 @@ local update_time = ngx.update_time
 
 local job_module = require("kong.timer.job")
 local utils_module = require("kong.timer.utils")
-local wheel_module = require("kong.timer.wheel")
 local wheel_group_module = require("kong.timer.wheel.group")
 local constants = require("kong.timer.constants")
 
