@@ -40,7 +40,7 @@ local meta_table = {
 function _M:update_closest()
     local old_closest = self.closest
     local delay = 0
-    local msec_wheel = self.msec
+    local msec_wheel = self.msec_wheel
     local cur_msec_pointer = msec_wheel:get_cur_pointer()
 
     -- `constants.MSEC_WHEEL_SLOTS - 1` means
@@ -74,10 +74,10 @@ end
 -- * add all expired jobs from wheels to `wheels.ready_jobs`
 -- * move some jobs from higher wheel to lower wheel
 function _M:fetch_all_expired_jobs()
-    local hour_wheel = self.hour
-    local minute_wheel = self.min
-    local second_wheel = self.sec
-    local msec_wheel = self.msec
+    local hour_wheel = self.hour_wheel
+    local minute_wheel = self.minute_wheel
+    local second_wheel = self.second_wheel
+    local msec_wheel = self.msec_wheel
 
 
     local callbacks = hour_wheel:get_jobs()
@@ -163,10 +163,10 @@ end
 
 
 function _M:sync_time()
-    local hour_wheel = self.hour
-    local minute_wheel = self.min
-    local second_wheel = self.sec
-    local msec_wheel = self.msec
+    local hour_wheel = self.hour_wheel
+    local minute_wheel = self.minute_wheel
+    local second_wheel = self.second_wheel
+    local msec_wheel = self.msec_wheel
 
     self:fetch_all_expired_jobs()
 
@@ -198,10 +198,10 @@ end
 -- insert a job into the wheel group
 function _M:insert_job(job)
     local ok, err
-    local hour_wheel = self.hour
-    local minute_wheel = self.min
-    local second_wheel = self.sec
-    local msec_wheel = self.msec
+    local hour_wheel = self.hour_wheel
+    local minute_wheel = self.minute_wheel
+    local second_wheel = self.second_wheel
+    local msec_wheel = self.msec_wheel
 
     if job.next_pointer.hour ~= 0 then
         ok, err = hour_wheel:insert(job.next_pointer.hour, job)
@@ -244,16 +244,16 @@ function _M.new()
         pending_jobs = {},
 
         -- 100ms per slot
-        msec = wheel_module.new(constants.MSEC_WHEEL_SLOTS),
+        msec_wheel = wheel_module.new(constants.MSEC_WHEEL_SLOTS),
 
         -- 1 second per slot
-        sec = wheel_module.new(constants.SECOND_WHEEL_SLOTS),
+        second_wheel = wheel_module.new(constants.SECOND_WHEEL_SLOTS),
 
         -- 1 minute per slot
-        min = wheel_module.new(constants.MINUTE_WHEEL_SLOTS),
+        minute_wheel = wheel_module.new(constants.MINUTE_WHEEL_SLOTS),
 
         -- 1 hour per slot
-        hour = wheel_module.new(constants.HOUR_WHEEL_SLOTS),
+        hour_wheel = wheel_module.new(constants.HOUR_WHEEL_SLOTS),
     }
 
 
