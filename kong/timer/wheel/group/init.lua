@@ -22,7 +22,6 @@ local exiting = ngx.worker.exiting
 local now = ngx.now
 local update_time = ngx.update_time
 
-local job_module = require("kong.timer.job")
 local utils_module = require("kong.timer.utils")
 local wheel_module = require("kong.timer.wheel")
 local constants = require("kong.timer.constants")
@@ -197,6 +196,12 @@ end
 
 -- insert a job into the wheel group
 function _M:insert_job(job)
+    if job:is_immediately() then
+        assert(not self.ready_jobs[job.name])
+        self.ready_jobs[job.name] = job
+        return true, nil
+    end
+
     local ok, err
     local hour_wheel = self.hour_wheel
     local minute_wheel = self.minute_wheel

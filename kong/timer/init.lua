@@ -22,7 +22,6 @@ local update_time = ngx.update_time
 
 local job_module = require("kong.timer.job")
 local utils_module = require("kong.timer.utils")
-local wheel_module = require("kong.timer.wheel")
 local wheel_group_module = require("kong.timer.wheel.group")
 local constants = require("kong.timer.constants")
 
@@ -211,15 +210,9 @@ local function create(self ,name, callback, delay, once, args)
     job:enable()
     jobs[name] = job
 
-    if job:is_immediately() then
-        self.wheels.ready_jobs[name] = job
-        wake_up_mover_timer(self)
-
-        return true, nil
-    end
-
     local ok, err = wheels:insert_job(job)
 
+    wake_up_mover_timer(self)
     wake_up_super_timer(self)
 
     return ok, err
