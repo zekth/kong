@@ -36,95 +36,6 @@ local meta_table = {
 }
 
 
-local function _fetch_all_expired_jobs(self)
-    local hour_wheel = self.hour_wheel
-    local minute_wheel = self.minute_wheel
-    local second_wheel = self.second_wheel
-    local msec_wheel = self.msec_wheel
-
-
-    local callbacks = hour_wheel:get_jobs()
-
-    if callbacks then
-        for name, job in pairs(callbacks) do
-
-            local next = job.next_pointer
-
-            if next.minute ~= 0 then
-                minute_wheel:insert(job.next_pointer.minute, job)
-
-            elseif next.second ~= 0 then
-                second_wheel:insert(job.next_pointer.second, job)
-
-            elseif next.msec ~= 0 then
-                msec_wheel:insert(job.next_pointer.msec, job)
-
-            else
-                self.expired_jobs[name] = job
-            end
-
-            callbacks[name] = nil
-        end
-    end
-
-    callbacks = minute_wheel:get_jobs()
-
-    if callbacks then
-        for name, job in pairs(callbacks) do
-
-            if job:is_runable() then
-                local next = job.next_pointer
-
-                if next.second ~= 0 then
-                    second_wheel:insert(job.next_pointer.second, job)
-
-                elseif next.msec ~= 0 then
-                    msec_wheel:insert(job.next_pointer.msec, job)
-
-                else
-                    self.expired_jobs[name] = job
-                end
-            end
-
-            callbacks[name] = nil
-        end
-    end
-
-    callbacks = second_wheel:get_jobs()
-
-    if callbacks then
-        for name, job in pairs(callbacks) do
-
-            if job:is_runable() then
-                local next = job.next_pointer
-
-                if next.msec ~= 0 then
-                    msec_wheel:insert(job.next_pointer.msec, job)
-
-                else
-                    self.expired_jobs[name] = job
-                end
-            end
-
-            callbacks[name] = nil
-        end
-    end
-
-
-    callbacks = msec_wheel:get_jobs()
-
-    if callbacks then
-        for name, job in pairs(callbacks) do
-            if job:is_runable() then
-                self.expired_jobs[name] = job
-            end
-
-            callbacks[name] = nil
-        end
-    end
-end
-
-
 -- calculate how long until the next timer expires
 function _M:update_closest()
     local old_closest = self.closest
@@ -159,19 +70,95 @@ function _M:update_closest()
 end
 
 
-function _M:has_any_expired_jobs()
-    return not utils_module.is_empty_table(self.expired_jobs)
-end
-
-
 -- do the following things
 -- * add all expired jobs from wheels to `wheels.ready_jobs`
 -- * move some jobs from higher wheel to lower wheel
 function _M:fetch_all_expired_jobs()
-    _fetch_all_expired_jobs(self)
-    local jobs = self.expired_jobs
-    self.expired_jobs = {}
-    return jobs
+    local hour_wheel = self.hour_wheel
+    local minute_wheel = self.minute_wheel
+    local second_wheel = self.second_wheel
+    local msec_wheel = self.msec_wheel
+
+
+    local callbacks = hour_wheel:get_jobs()
+
+    if callbacks then
+        for name, job in pairs(callbacks) do
+
+            local next = job.next_pointer
+
+            if next.minute ~= 0 then
+                minute_wheel:insert(job.next_pointer.minute, job)
+
+            elseif next.second ~= 0 then
+                second_wheel:insert(job.next_pointer.second, job)
+
+            elseif next.msec ~= 0 then
+                msec_wheel:insert(job.next_pointer.msec, job)
+
+            else
+                self.ready_jobs[name] = job
+            end
+
+            callbacks[name] = nil
+        end
+    end
+
+    callbacks = minute_wheel:get_jobs()
+
+    if callbacks then
+        for name, job in pairs(callbacks) do
+
+            if job:is_runable() then
+                local next = job.next_pointer
+
+                if next.second ~= 0 then
+                    second_wheel:insert(job.next_pointer.second, job)
+
+                elseif next.msec ~= 0 then
+                    msec_wheel:insert(job.next_pointer.msec, job)
+
+                else
+                    self.ready_jobs[name] = job
+                end
+            end
+
+            callbacks[name] = nil
+        end
+    end
+
+    callbacks = second_wheel:get_jobs()
+
+    if callbacks then
+        for name, job in pairs(callbacks) do
+
+            if job:is_runable() then
+                local next = job.next_pointer
+
+                if next.msec ~= 0 then
+                    msec_wheel:insert(job.next_pointer.msec, job)
+
+                else
+                    self.ready_jobs[name] = job
+                end
+            end
+
+            callbacks[name] = nil
+        end
+    end
+
+
+    callbacks = msec_wheel:get_jobs()
+
+    if callbacks then
+        for name, job in pairs(callbacks) do
+            if job:is_runable() then
+                self.ready_jobs[name] = job
+            end
+
+            callbacks[name] = nil
+        end
+    end
 end
 
 
@@ -181,7 +168,7 @@ function _M:sync_time()
     local second_wheel = self.second_wheel
     local msec_wheel = self.msec_wheel
 
-    _fetch_all_expired_jobs(self)
+    self:fetch_all_expired_jobs()
 
     update_time()
     self.real_time = now()
@@ -202,7 +189,7 @@ function _M:sync_time()
             end
         end
 
-        _fetch_all_expired_jobs(self)
+        self:fetch_all_expired_jobs()
         self.expected_time =  self.expected_time + constants.RESOLUTION
     end
 end
@@ -247,7 +234,14 @@ function _M.new()
 
         closest = 0,
 
-        expired_jobs = {},
+        -- will be move to `pending_jobs` by function `mover_timer_callback`
+        -- the function `fetch_all_expired_jobs`
+        -- adds all expired job to this table
+        ready_jobs = {},
+
+        -- each job in this table will
+        -- be run by function `worker_timer_callback`
+        pending_jobs = {},
 
         -- 100ms per slot
         msec_wheel = wheel_module.new(constants.MSEC_WHEEL_SLOTS),

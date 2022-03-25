@@ -22,6 +22,7 @@ local update_time = ngx.update_time
 
 local job_module = require("kong.timer.job")
 local utils_module = require("kong.timer.utils")
+local wheel_module = require("kong.timer.wheel")
 local wheel_group_module = require("kong.timer.wheel.group")
 local constants = require("kong.timer.constants")
 
@@ -54,15 +55,6 @@ local function wake_up_mover_timer(self)
 end
 
 
-local function fetch_ready_jobs(self)
-    local tbl = self.wheels:fetch_all_expired_jobs()
-    utils_module.table_append(
-        self.ready_jobs,
-        tbl
-    )
-end
-
-
 -- move all jobs from `self.wheels.ready_jobs` to `self.wheels.pending_jobs`
 -- wake up the worker timer
 local function mover_timer_callback(premature, self)
@@ -80,17 +72,17 @@ local function mover_timer_callback(premature, self)
         semaphore_mover:wait(1)
 
         local is_no_pending_jobs =
-            utils_module.is_empty_table(self.pending_jobs)
+            utils_module.is_empty_table(wheels.pending_jobs)
 
         local is_no_ready_jobs =
-            utils_module.is_empty_table(self.ready_jobs)
+            utils_module.is_empty_table(wheels.ready_jobs)
 
         if not is_no_pending_jobs then
             semaphore_worker:post(opt_threads)
 
         elseif is_no_pending_jobs and not is_no_ready_jobs then
-            self.pending_jobs = self.ready_jobs
-            self.ready_jobs = {}
+            wheels.pending_jobs = wheels.ready_jobs
+            wheels.ready_jobs = {}
             semaphore_worker:post(opt_threads)
         end
     end
@@ -115,12 +107,12 @@ local function worker_timer_callback(premature, self, thread_index)
         -- TODO: check the return value
         semaphore_worker:wait(1)
 
-        while not utils_module.is_empty_table(self.pending_jobs) do
+        while not utils_module.is_empty_table(wheels.pending_jobs) do
             thread.counter.runs = thread.counter.runs + 1
 
-            local job = utils_module.get_a_item_from_table(self.pending_jobs)
+            local job = utils_module.get_a_item_from_table(wheels.pending_jobs)
 
-            self.pending_jobs[job.name] = nil
+            wheels.pending_jobs[job.name] = nil
 
             if job:is_runable() then
                 job:execute()
@@ -137,7 +129,7 @@ local function worker_timer_callback(premature, self, thread_index)
             end
         end
 
-        if not utils_module.is_empty_table(self.ready_jobs) then
+        if not utils_module.is_empty_table(wheels.ready_jobs) then
             wake_up_mover_timer(self)
         end
 
@@ -185,9 +177,8 @@ local function super_timer_callback(premature, self)
 
         if self.enable then
             wheels:sync_time()
-            fetch_ready_jobs(self)
 
-            if not utils_module.is_empty_table(self.ready_jobs) then
+            if not utils_module.is_empty_table(wheels.ready_jobs) then
                 wake_up_mover_timer(self)
             end
 
@@ -221,7 +212,7 @@ local function create(self ,name, callback, delay, once, args)
     jobs[name] = job
 
     if job:is_immediately() then
-        self.ready_jobs[name] = job
+        self.wheels.ready_jobs[name] = job
         wake_up_mover_timer(self)
 
         return true, nil
@@ -308,15 +299,6 @@ function _M:configure(options)
     self.semaphore_mover = semaphore.new(0)
 
     self.wheels = wheel_group_module.new()
-
-    -- will be move to `pending_jobs` by function `mover_timer_callback`
-    -- the function `fetch_all_expired_jobs`
-    -- adds all expired job to this table
-    self.pending_jobs = {}
-
-    -- each job in this table will
-    -- be run by function `worker_timer_callback`
-    self.ready_jobs = {}
 
     for i = 1, self.opt.threads do
         self.threads[i] = {
