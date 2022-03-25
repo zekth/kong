@@ -69,7 +69,6 @@ local function mover_timer_callback(premature, self)
     local semaphore_worker = self.semaphore_worker
     local semaphore_mover = self.semaphore_mover
     local opt_threads = self.opt.threads
-    local wheels = self.wheels
 
     if premature then
         return
