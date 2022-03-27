@@ -1,5 +1,5 @@
-local utils_module = require("kong.timer.utils")
-local wheel_module = require("kong.timer.wheel")
+local utils = require("kong.timer.utils")
+local wheel = require("kong.timer.wheel")
 local constants = require("kong.timer.constants")
 
 local pairs = pairs
@@ -15,7 +15,7 @@ local ERR = ngx.ERR
 local now = ngx.now
 local update_time = ngx.update_time
 
-local assert = utils_module.assert
+local assert = utils.assert
 
 local _M = {}
 
@@ -34,18 +34,18 @@ function _M:update_closest()
     -- `constants.MSEC_WHEEL_SLOTS - 1` means
     -- ignore the current slot
     for i = 1, constants.MSEC_WHEEL_SLOTS - 1 do
-        local pointer, is_move_to_start =
+        local pointer, is_spin_to_start_slot =
             msec_wheel:cal_pointer(cur_msec_pointer, i)
 
         delay = delay + constants.RESOLUTION
 
-        if is_move_to_start then
+        if is_spin_to_start_slot then
             break
         end
 
         local jobs = msec_wheel:get_jobs_by_pointer(pointer)
 
-        if not utils_module.is_empty_table(jobs) then
+        if not utils.is_empty_table(jobs) then
             break
         end
     end
@@ -68,10 +68,10 @@ function _M:fetch_all_expired_jobs()
     local msec_wheel = self.msec_wheel
 
 
-    local callbacks = hour_wheel:get_jobs()
+    local jobs = hour_wheel:get_jobs()
 
-    if callbacks then
-        for name, job in pairs(callbacks) do
+    if jobs then
+        for name, job in pairs(jobs) do
 
             local next = job.next_pointer
 
@@ -88,14 +88,14 @@ function _M:fetch_all_expired_jobs()
                 self.ready_jobs[name] = job
             end
 
-            callbacks[name] = nil
+            jobs[name] = nil
         end
     end
 
-    callbacks = minute_wheel:get_jobs()
+    jobs = minute_wheel:get_jobs()
 
-    if callbacks then
-        for name, job in pairs(callbacks) do
+    if jobs then
+        for name, job in pairs(jobs) do
 
             if job:is_runable() then
                 local next = job.next_pointer
@@ -111,14 +111,14 @@ function _M:fetch_all_expired_jobs()
                 end
             end
 
-            callbacks[name] = nil
+            jobs[name] = nil
         end
     end
 
-    callbacks = second_wheel:get_jobs()
+    jobs = second_wheel:get_jobs()
 
-    if callbacks then
-        for name, job in pairs(callbacks) do
+    if jobs then
+        for name, job in pairs(jobs) do
 
             if job:is_runable() then
                 local next = job.next_pointer
@@ -131,20 +131,20 @@ function _M:fetch_all_expired_jobs()
                 end
             end
 
-            callbacks[name] = nil
+            jobs[name] = nil
         end
     end
 
 
-    callbacks = msec_wheel:get_jobs()
+    jobs = msec_wheel:get_jobs()
 
-    if callbacks then
-        for name, job in pairs(callbacks) do
+    if jobs then
+        for name, job in pairs(jobs) do
             if job:is_runable() then
                 self.ready_jobs[name] = job
             end
 
-            callbacks[name] = nil
+            jobs[name] = nil
         end
     end
 end
@@ -161,17 +161,17 @@ function _M:sync_time()
     update_time()
     self.real_time = now()
 
-    while utils_module.float_compare(self.real_time, self.expected_time) == 1 do
-        local _, continue = msec_wheel:move_to_next()
+    while utils.float_compare(self.real_time, self.expected_time) == 1 do
+        local _, is_spin_to_start_slot = msec_wheel:spin_pointer_one_slot()
 
-        if continue then
-            _, continue = second_wheel:move_to_next()
+        if is_spin_to_start_slot then
+            _, is_spin_to_start_slot = second_wheel:spin_pointer_one_slot()
 
-            if continue then
-                _, continue = minute_wheel:move_to_next()
+            if is_spin_to_start_slot then
+                _, is_spin_to_start_slot = minute_wheel:spin_pointer_one_slot()
 
-                if continue then
-                    _, _ = hour_wheel:move_to_next()
+                if is_spin_to_start_slot then
+                    hour_wheel:spin_pointer_one_slot()
                 end
 
             end
@@ -232,16 +232,16 @@ function _M.new()
         pending_jobs = {},
 
         -- 100ms per slot
-        msec_wheel = wheel_module.new(constants.MSEC_WHEEL_SLOTS),
+        msec_wheel = wheel.new(constants.MSEC_WHEEL_SLOTS),
 
         -- 1 second per slot
-        second_wheel = wheel_module.new(constants.SECOND_WHEEL_SLOTS),
+        second_wheel = wheel.new(constants.SECOND_WHEEL_SLOTS),
 
         -- 1 minute per slot
-        minute_wheel = wheel_module.new(constants.MINUTE_WHEEL_SLOTS),
+        minute_wheel = wheel.new(constants.MINUTE_WHEEL_SLOTS),
 
         -- 1 hour per slot
-        hour_wheel = wheel_module.new(constants.HOUR_WHEEL_SLOTS),
+        hour_wheel = wheel.new(constants.HOUR_WHEEL_SLOTS),
     }
 
 

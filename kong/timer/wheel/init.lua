@@ -25,16 +25,18 @@ end
 
 function _M:cal_pointer(pointer, offset)
     local nelts = self.nelts
+    local is_spin_to_start_slot = false
     local p = pointer
     local old = p
 
     p = (p + offset) % (nelts + 1)
 
     if old + offset > nelts then
-        return p + 1, true
+        is_spin_to_start_slot = true
+        p = p + 1
     end
 
-    return p, false
+    return p, is_spin_to_start_slot
 end
 
 
@@ -55,11 +57,11 @@ function _M:insert(pointer, job)
 end
 
 
-function _M:move_to_next()
-    local pointer, is_move_to_end = self:cal_pointer(self.pointer, 1)
+function _M:spin_pointer_one_slot()
+    local pointer, is_spin_to_start_slot = self:cal_pointer(self.pointer, 1)
     self.pointer = pointer
 
-    return self.slots[self.pointer], is_move_to_end
+    return self.slots[self.pointer], is_spin_to_start_slot
 end
 
 
