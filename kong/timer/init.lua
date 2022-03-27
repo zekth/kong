@@ -1,7 +1,15 @@
-local semaphore = require "ngx.semaphore"
+local pairs = pairs
+
+local semaphore = require("ngx.semaphore")
+local job_module = require("kong.timer.job")
+local utils_module = require("kong.timer.utils")
+local wheel_group_module = require("kong.timer.wheel.group")
+local constants = require("kong.timer.constants")
 
 -- TODO: use it to readuce overhead
 -- local new_tab = require "table.new"
+
+local ngx = ngx
 
 local max = math.max
 local modf = math.modf
@@ -19,11 +27,6 @@ local sleep = ngx.sleep
 local exiting = ngx.worker.exiting
 local now = ngx.now
 local update_time = ngx.update_time
-
-local job_module = require("kong.timer.job")
-local utils_module = require("kong.timer.utils")
-local wheel_group_module = require("kong.timer.wheel.group")
-local constants = require("kong.timer.constants")
 
 local assert = utils_module.assert
 

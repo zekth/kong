@@ -1,4 +1,11 @@
+local utils_module = require("kong.timer.utils")
+local wheel_module = require("kong.timer.wheel")
+local constants = require("kong.timer.constants")
+
+local pairs = pairs
 local setmetatable = setmetatable
+
+local ngx = ngx
 
 -- luacheck: push ignore
 local log = ngx.log
@@ -7,10 +14,6 @@ local ERR = ngx.ERR
 
 local now = ngx.now
 local update_time = ngx.update_time
-
-local utils_module = require("kong.timer.utils")
-local wheel_module = require("kong.timer.wheel")
-local constants = require("kong.timer.constants")
 
 local assert = utils_module.assert
 

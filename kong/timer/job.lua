@@ -1,6 +1,9 @@
+local utils = require("kong.timer.utils")
+
 local unpack = table.unpack
 local concat = table.concat
 local debug_getinfo = debug.getinfo
+local setmetatable = setmetatable
 
 local max = math.max
 local min = math.min
@@ -10,14 +13,14 @@ local huge = math.huge
 
 local pcall = pcall
 
+local ngx = ngx
+
 -- luacheck: push ignore
 local log = ngx.log
 local ERR = ngx.ERR
 -- luacheck: pop
 
 local now = ngx.now
-
-local utils = require("kong.timer.utils")
 
 local assert = utils.assert
 
@@ -267,8 +270,10 @@ function _M.new(wheels, name, callback, delay, once, args)
         offset_minute = modf(delay / 60)
         offset_second = delay % 60
 
+
         if offset_second == 0 then
             if offset_hour == 0 and offset_minute == 0 then
+                -- nil means no offset
                 offset_second = nil
             end
         end

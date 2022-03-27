@@ -1,9 +1,13 @@
+local utils = require("kong.timer.utils")
+
+local setmetatable = setmetatable
+
+local ngx = ngx
+
 -- luacheck: push ignore
 local log = ngx.log
 local ERR = ngx.ERR
 -- luacheck: pop
-
-local utils = require("kong.timer.utils")
 
 local assert = utils.assert
 
