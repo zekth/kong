@@ -93,8 +93,6 @@ end
 
 
 local function job_re_cal_next_pointer(job, wheels)
-    local _
-
     local offset_hour = job.offset.hour
     local offset_minute = job.offset.minute
     local offset_second = job.offset.second
@@ -241,9 +239,11 @@ end
 function _M.new(wheels, name, callback, delay, once, args)
     local delay_origin = delay
     local offset_hour, offset_minute, offset_second, offset_msec
-    local immediately = false
+    local immediately = true
 
     if delay ~= 0 then
+        immediately = false
+
         delay, offset_msec = modf(delay)
         offset_msec = offset_msec * 1000 + 10
         offset_msec = floor(floor(offset_msec) / 100)
@@ -254,9 +254,6 @@ function _M.new(wheels, name, callback, delay, once, args)
 
         offset_minute = modf(delay / 60)
         offset_second = delay % 60
-
-    else
-        immediately = true
     end
 
 
