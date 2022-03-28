@@ -32,6 +32,22 @@ do
 end
 
 
+local table_new
+
+do
+    local has_table_new, _table_new = pcall(require, "table.new")
+
+    if has_table_new then
+        table_new = _table_new
+
+    else
+        table_new = function ()
+            return { }
+        end
+    end
+end
+
+
 
 local _M = {}
 
@@ -62,7 +78,12 @@ function _M.get_variance(cur_value, cur_count, old_variance, old_avg)
 end
 
 
-function _M.is_empty_table(tbl)
+function _M.table_new(narray, nhash)
+    return table_new(narray, nhash)
+end
+
+
+function _M.table_is_empty(tbl)
     assert(type(tbl) == "table",
         "expected `tbl` to be a `table`")
 
@@ -74,7 +95,7 @@ function _M.is_empty_table(tbl)
 end
 
 
-function _M.get_a_item_from_table(tbl)
+function _M.table_get_a_item(tbl)
     if not tbl then
         return nil
     end
