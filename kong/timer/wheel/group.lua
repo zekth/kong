@@ -39,6 +39,15 @@ function _M:update_closest()
 
         delay = delay + constants.RESOLUTION
 
+        -- Scan only to the end point, not the whole wheel.
+        -- why?
+        -- Because there might be some jobs falling from the higher wheel
+        -- when the pointer of the `msec_wheel` spins to the starting point.
+        -- If the whole wheel is scanned
+        -- and the result obtained is used as the sleep time of the super timer,
+        -- some jobs of higher wheels may not be executed in time.
+        -- This is because the super timer will only be woken up
+        -- when any wheels are modified or when the semaphore timeout.
         if is_spin_to_start_slot then
             break
         end
@@ -72,23 +81,38 @@ function _M:fetch_all_expired_jobs()
 
     if jobs then
         for name, job in pairs(jobs) do
+            jobs[name] = nil
+
+            if not job:is_runable() then
+                goto continue
+            end
 
             local next = job.next_pointer
 
+            -- if `next.minute` is equal 0,
+            -- it means that this job does
+            -- not need to be inserted
+            -- into the `minute_wheel`.
+            -- Same for `next.second` and `next.msec`
+
             if next.minute ~= 0 then
                 minute_wheel:insert(job.next_pointer.minute, job)
-
-            elseif next.second ~= 0 then
-                second_wheel:insert(job.next_pointer.second, job)
-
-            elseif next.msec ~= 0 then
-                msec_wheel:insert(job.next_pointer.msec, job)
-
-            else
-                self.ready_jobs[name] = job
+                goto continue
             end
 
-            jobs[name] = nil
+            if next.second ~= 0 then
+                second_wheel:insert(job.next_pointer.second, job)
+                goto continue
+            end
+
+            if next.msec ~= 0 then
+                msec_wheel:insert(job.next_pointer.msec, job)
+                goto continue
+            end
+
+            self.ready_jobs[name] = job
+
+            ::continue::
         end
     end
 
@@ -96,22 +120,27 @@ function _M:fetch_all_expired_jobs()
 
     if jobs then
         for name, job in pairs(jobs) do
+            jobs[name] = nil
 
-            if job:is_runable() then
-                local next = job.next_pointer
-
-                if next.second ~= 0 then
-                    second_wheel:insert(job.next_pointer.second, job)
-
-                elseif next.msec ~= 0 then
-                    msec_wheel:insert(job.next_pointer.msec, job)
-
-                else
-                    self.ready_jobs[name] = job
-                end
+            if not job:is_runable() then
+                goto continue
             end
 
-            jobs[name] = nil
+            local next = job.next_pointer
+
+            if next.second ~= 0 then
+                second_wheel:insert(job.next_pointer.second, job)
+                goto continue
+            end
+
+            if next.msec ~= 0 then
+                msec_wheel:insert(job.next_pointer.msec, job)
+                goto continue
+            end
+
+            self.ready_jobs[name] = job
+
+            ::continue::
         end
     end
 
@@ -119,19 +148,22 @@ function _M:fetch_all_expired_jobs()
 
     if jobs then
         for name, job in pairs(jobs) do
+            jobs[name] = nil
 
-            if job:is_runable() then
-                local next = job.next_pointer
-
-                if next.msec ~= 0 then
-                    msec_wheel:insert(job.next_pointer.msec, job)
-
-                else
-                    self.ready_jobs[name] = job
-                end
+            if not job:is_runable() then
+                goto continue
             end
 
-            jobs[name] = nil
+            local next = job.next_pointer
+
+            if next.msec ~= 0 then
+                msec_wheel:insert(job.next_pointer.msec, job)
+                goto continue
+            end
+
+            self.ready_jobs[name] = job
+
+            ::continue::
         end
     end
 
@@ -140,11 +172,18 @@ function _M:fetch_all_expired_jobs()
 
     if jobs then
         for name, job in pairs(jobs) do
-            if job:is_runable() then
-                self.ready_jobs[name] = job
+            jobs[name] = nil
+
+            if not job:is_runable() then
+                goto continue
             end
 
-            jobs[name] = nil
+            -- all jobs in the slot
+            -- pointed by the `msec_wheel` pointer
+            -- will be executed
+            self.ready_jobs[name] = job
+
+            ::continue::
         end
     end
 end
@@ -156,28 +195,42 @@ function _M:sync_time()
     local second_wheel = self.second_wheel
     local msec_wheel = self.msec_wheel
 
+    -- perhaps some jobs have expired but not been fetched
     self:fetch_all_expired_jobs()
 
     update_time()
     self.real_time = now()
 
+    -- Until the difference with the real time is less than 100ms
     while utils.float_compare(self.real_time, self.expected_time) == 1 do
+
+        -- if the pointer of a wheel spins to the starting point,
+        -- then the pointer of a higher wheel should spin too.
+
         local _, is_spin_to_start_slot = msec_wheel:spin_pointer_one_slot()
 
-        if is_spin_to_start_slot then
-            _, is_spin_to_start_slot = second_wheel:spin_pointer_one_slot()
-
-            if is_spin_to_start_slot then
-                _, is_spin_to_start_slot = minute_wheel:spin_pointer_one_slot()
-
-                if is_spin_to_start_slot then
-                    hour_wheel:spin_pointer_one_slot()
-                end
-
-            end
+        if not is_spin_to_start_slot then
+            goto stop_spining
         end
 
+        _, is_spin_to_start_slot = second_wheel:spin_pointer_one_slot()
+
+        if not is_spin_to_start_slot then
+            goto stop_spining
+        end
+
+        _, is_spin_to_start_slot = minute_wheel:spin_pointer_one_slot()
+
+        if not is_spin_to_start_slot then
+            goto stop_spining
+        end
+
+        hour_wheel:spin_pointer_one_slot()
+
+        ::stop_spining::
+
         self:fetch_all_expired_jobs()
+
         self.expected_time =  self.expected_time + constants.RESOLUTION
     end
 end
@@ -190,6 +243,13 @@ function _M:insert_job(job)
     local minute_wheel = self.minute_wheel
     local second_wheel = self.second_wheel
     local msec_wheel = self.msec_wheel
+
+    -- if `next.minute` is equal 0,
+    -- it means that this job does
+    -- not need to be inserted
+    -- into the `minute_wheel`.
+    -- Same for `next.second`,`next.msec`,
+    -- and `next.hour`
 
     if job.next_pointer.hour ~= 0 then
         ok, err = hour_wheel:insert(job.next_pointer.hour, job)
