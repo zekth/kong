@@ -137,7 +137,7 @@ describe("worker respawn", function()
       assert.equal(0, matching)
 
       return true
-    end)
+    end, 15)
   end)
 
   it("lands on the correct cache page #5799", function()
