@@ -141,7 +141,7 @@ for _, strategy in helpers.each_strategy() do
         assert.equal("Kong stopped (gracefully)\n", msg)
         assert.equal(true, ok)
 
-        ok, err, msg = helpers.kong_exec("quit --prefix servroot2", {
+        ok, err, msg = helpers.kong_exec("quit --wait 5 --prefix servroot2", {
           DATABASE="off"
         })
         assert.equal("", err)
