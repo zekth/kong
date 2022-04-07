@@ -231,7 +231,7 @@ function _M:enable()
 end
 
 
-function _M:is_enable()
+function _M:is_enabled()
     return self._enable
 end
 
@@ -241,18 +241,18 @@ function _M:is_once()
 end
 
 
-function _M:is_cancel()
+function _M:is_cancelled()
     return self._cancel
 end
 
 
-function _M:is_runable()
+function _M:is_runnable()
     return self._enable and not self._cancel and not self._running
 end
 
 
-function _M:is_immediately()
-    return self._immediately
+function _M:is_immediate()
+    return self._immediate
 end
 
 
@@ -269,10 +269,10 @@ end
 function _M.new(wheels, name, callback, delay, once, args)
     local delay_origin = delay
     local offset_hour, offset_minute, offset_second, offset_msec
-    local immediately = true
+    local immediate = true
 
     if delay ~= 0 then
-        immediately = false
+        immediate = false
 
         delay, offset_msec = modf(delay)
         offset_msec = offset_msec * 1000 + 10
@@ -298,7 +298,7 @@ function _M.new(wheels, name, callback, delay, once, args)
         _enable = true,
         _cancel = false,
         _running = false,
-        _immediately = immediately,
+        _immediate = immediate,
         name = name,
         callback = callback,
         delay = delay_origin,
@@ -336,7 +336,7 @@ function _M.new(wheels, name, callback, delay, once, args)
 
     job_create_meta(self)
 
-    if not immediately then
+    if not immediate then
         job_re_cal_next_pointer(self, wheels)
     end
 
@@ -350,7 +350,7 @@ function _M:execute()
     stats.runs = stats.runs + 1
     local start = now()
 
-    if not self:is_runable() then
+    if not self:is_runnable() then
         return
     end
 

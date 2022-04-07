@@ -85,7 +85,7 @@ function _M:fetch_all_expired_jobs()
         for name, job in pairs(jobs) do
             jobs[name] = nil
 
-            if not job:is_runable() then
+            if not job:is_runnable() then
                 goto continue
             end
 
@@ -128,7 +128,7 @@ function _M:fetch_all_expired_jobs()
         for name, job in pairs(jobs) do
             jobs[name] = nil
 
-            if not job:is_runable() then
+            if not job:is_runnable() then
                 goto continue
             end
 
@@ -152,7 +152,7 @@ function _M:fetch_all_expired_jobs()
 
 
     -- Start processing jobs
-    -- that expire in the hour_wheel.
+    -- that expire in the second_wheel.
 
     jobs = second_wheel:get_jobs()
 
@@ -160,7 +160,7 @@ function _M:fetch_all_expired_jobs()
         for name, job in pairs(jobs) do
             jobs[name] = nil
 
-            if not job:is_runable() then
+            if not job:is_runnable() then
                 goto continue
             end
 
@@ -179,7 +179,7 @@ function _M:fetch_all_expired_jobs()
 
 
     -- Start processing jobs
-    -- that expire in the hour_wheel.
+    -- that expire in the msec_wheel.
 
     jobs = msec_wheel:get_jobs()
 
@@ -187,7 +187,7 @@ function _M:fetch_all_expired_jobs()
         for name, job in pairs(jobs) do
             jobs[name] = nil
 
-            if not job:is_runable() then
+            if not job:is_runnable() then
                 goto continue
             end
 
