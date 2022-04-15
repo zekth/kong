@@ -70,22 +70,27 @@ return function(options)
 
 
   do
-    local timer = require("kong.timer")
+    local timer_module = require("kong.timer")
+    local timer_sys = { }
 
     if options.cli or options.rbusted then
-      timer:configure({ threads = 32 })
-      timer:start()
+      timer_module.configure(timer_sys, { threads = 32 })
+      timer_module.start(timer_sys)
 
     else
-      timer:configure({})
+      timer_module.configure(timer_sys, {})
     end
 
     _G.ngx.timer.at = function(delay, callback, ...)
-      return timer:once(nil, callback, delay, ...)
+      return timer_sys:once(nil, callback, delay, ...)
     end
 
     _G.ngx.timer.every = function(interval, callback, ...)
-      return timer:every(nil, callback, interval, ...)
+      return timer_sys:every(nil, callback, interval, ...)
+    end
+
+    _G.hack_timer_sys_start = function ()
+      timer_module.start(timer_sys)
     end
   end
 

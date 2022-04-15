@@ -585,9 +585,7 @@ function Kong.init_worker()
 
   local timer = require("kong.timer")
 
-  if timer.configured then
-    timer:start()
-  end
+  hack_timer_sys_start()
 
   -- init DB
 

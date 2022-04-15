@@ -1,5 +1,5 @@
 local pow = math.pow
-local floor = math.floor
+-- local floor = math.floor
 local pcall = pcall
 
 local std_assert = assert
@@ -119,21 +119,7 @@ function _M.table_is_empty(tbl)
 end
 
 
-function _M.table_get_a_item(tbl)
-    if not tbl then
-        return nil
-    end
-
-    -- luacheck: ignore
-    for _, v in pairs(tbl) do
-        return v
-    end
-
-    return nil
-end
-
-
-function _M.table_append(dst, src)
+function _M.table_merge(dst, src)
     assert(dst and src)
 
     for k, v in pairs(src) do
@@ -244,9 +230,9 @@ function _M.print_wheel(wheels)
 end
 
 
-function _M:round(value, digits)
+--[[ function _M.round(value, digits)
     local x = 10 * digits
     return floor(value * x + 0.5) / x
-end
+end ]]
 
 return _M
