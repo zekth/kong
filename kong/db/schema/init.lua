@@ -1578,8 +1578,15 @@ local function adjust_field_for_context(field, value, context, nulls, opts)
     end
 
     if subfield then
-      for i = 1, #value do
-        value[i] = adjust_field_for_context(subfield, value[i], context, nulls, opts)
+      if field.type ~= "map" then
+        for i = 1, #value do
+          value[i] = adjust_field_for_context(subfield, value[i], context, nulls, opts)
+        end
+
+      else
+        for k, v in pairs(value) do
+          value[k] = adjust_field_for_context(subfield, v, context, nulls, opts)
+        end
       end
     end
   end
@@ -1750,14 +1757,14 @@ function Schema:process_auto_fields(data, context, nulls, opts)
             if count > 0 then
               for i = 1, count do
                 if is_reference(value[i]) then
-                  local deref, err = dereference(value)
+                  local deref, err = dereference(value[i])
                   if deref then
-                    value = deref
+                    value[i] = deref
                   else
                     if err then
-                      kong.log.warn("unable to resolve reference ", value, " (", err, ")")
+                      kong.log.warn("unable to resolve reference ", value[i], " (", err, ")")
                     else
-                      kong.log.warn("unable to resolve reference ", value)
+                      kong.log.warn("unable to resolve reference ", value[i])
                     end
 
                     value[i] = nil

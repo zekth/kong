@@ -62,7 +62,117 @@
 - [0.10.0](#0100---20170307)
 - [0.9.9 and prior](#099---20170202)
 
-## [2.8.0] (UNRELEASED)
+## Unreleased
+
+### Breaking Changes
+
+#### Admin API
+
+- Insert and update operations on target entities require using the `PUT` HTTP
+  method now. [#8596](https://github.com/Kong/kong/pull/8596). If you have
+  scripts that depend on it being `POST`, these scripts will need to be updated
+  when updating to Kong 3.0.
+
+#### PDK
+
+- The PDK is no longer versioned
+  [#8585](https://github.com/Kong/kong/pull/8585)
+
+### Deprecations
+
+- The `go_pluginserver_exe` and `go_plugins_dir` directives are no longer supported.
+  [#8552](https://github.com/Kong/kong/pull/8552). If you are using
+  [Go plugin server](https://github.com/Kong/go-pluginserver), please migrate your plugins to use the
+  [Go PDK](https://github.com/Kong/go-pdk) before upgrading.
+
+
+#### Plugins
+
+- The proxy-cache plugin does not store the response data in
+  `ngx.ctx.proxy_cache_hit` anymore. Logging plugins that need the response data
+  must read it from `kong.ctx.shared.proxy_cache_hit` from Kong 3.0 on.
+  [#8607](https://github.com/Kong/kong/pull/8607)
+- PDK now return `Uint8Array` and `bytes` for JavaScript's `kong.request.getRawBody`,
+  `kong.response.getRawBody`, `kong.service.response.getRawBody` and Python's `kong.request.get_raw_body`,
+  `kong.response.get_raw_body`, `kong.service.response.get_raw_body` respectively.
+  [#8623](https://github.com/Kong/kong/pull/8623)
+
+#### Configuration
+
+- Change the default of `lua_ssl_trusted_certificate` to `system`
+  [#8602](https://github.com/Kong/kong/pull/8602) to automatically load trusted CA list from system CA store.
+
+### Dependencies
+
+- Bumped pgmoon from 1.13.0 to 1.14.0
+  [#8429](https://github.com/Kong/kong/pull/8429)
+- OpenSSL bumped to 1.1.1n
+  [#8544](https://github.com/Kong/kong/pull/8544)
+- Bumped resty.openssl from 0.8.5 to 0.8.7
+  [#8592](https://github.com/Kong/kong/pull/8592)
+- Bumped inspect from 3.1.2 to 3.1.3
+  [#8589](https://github.com/Kong/kong/pull/8589)
+- Bumped resty.acme from 0.7.2 to 0.8.0
+  [#8680](https://github.com/Kong/kong/pull/8680
+
+### Additions
+
+#### Plugins
+
+- **Zipkin**: add support for including HTTP path in span name
+  through configuration property `http_span_name`.
+  [#8150](https://github.com/Kong/kong/pull/8150)
+
+#### Configuration
+
+- A new configuration item (`openresty_path`) has been added to allow
+  developers/operators to specify the OpenResty installation to use when
+  running Kong (instead of using the system-installed OpenResty)
+  [#8412](https://github.com/Kong/kong/pull/8412)
+
+### Fixes
+
+#### Core
+
+- The schema validator now correctly converts `null` from declarative
+  configurations to `nil`. [#8483](https://github.com/Kong/kong/pull/8483)
+- Only reschedule router and plugin iterator timers after finishing previous
+  execution, avoiding unnecessary concurrent executions.
+  [#8567](https://github.com/Kong/kong/pull/8567)
+- External plugins now handle returned JSON with null member correctly.
+  [#8610](https://github.com/Kong/kong/pull/8610)
+- Fix issue where the Go plugin server instance would not be updated after
+a restart (e.g., upon a plugin server crash).
+  [#8547](https://github.com/Kong/kong/pull/8547)
+
+#### Plugins
+
+- **ACME**: `auth_method` default value is set to `token`
+[#8565](https://github.com/Kong/kong/pull/8565)
+- **serverless-functions**: Removed deprecated `config.functions` from schema
+[#8559](https://github.com/Kong/kong/pull/8559)
+- **syslog**: `conf.facility` default value is now set to `user`
+[#8564](https://github.com/Kong/kong/pull/8564)
+- **AWS-Lambda**: Removed `proxy_scheme` field from schema
+[#8566](https://github.com/Kong/kong/pull/8566)
+- **hmac-auth**: Removed deprecated signature format using `ngx.var.uri`
+[#8558](https://github.com/Kong/kong/pull/8558)
+- Remove deprecated `blacklist`/`whitelist` config fields from bot-detection, ip-restriction and ACL plugins.
+[#8560](https://github.com/Kong/kong/pull/8560)
+
+#### Clustering
+
+- The cluster listener now uses the value of `admin_error_log` for its log file
+  instead of `proxy_error_log` [8583](https://github.com/Kong/kong/pull/8583)
+
+
+### Additions
+
+#### Performance
+- Do not register unnecessary event handlers on Hybrid mode Control Plane
+nodes [#8452](https://github.com/Kong/kong/pull/8452).
+
+## [2.8.0]
 
 ### Deprecations
 
@@ -76,7 +186,7 @@ the [docs](https://docs.konghq.com/gateway/2.7.x/reference/external-plugins/).
   [#8191](https://github.com/Kong/kong/pull/8191)
 - Bumped resty.session from 3.8 to 3.10
   [#8294](https://github.com/Kong/kong/pull/8294)
-- Bump lua-resty-openssl to 0.8.5
+- Bumped lua-resty-openssl to 0.8.5
   [#8368](https://github.com/Kong/kong/pull/8368)
 
 ### Additions
@@ -89,16 +199,26 @@ the [docs](https://docs.konghq.com/gateway/2.7.x/reference/external-plugins/).
 - Routes now support matching headers with regular expressions
   Thanks, [@vanhtuan0409](https://github.com/vanhtuan0409)!
   [#6079](https://github.com/Kong/kong/pull/6079)
-- Targets keep their health status when upstreams are updated.
-  [#8394](https://github.com/Kong/kong/pull/8394)
+
+#### Beta
+
+- Secrets Management and Vault support as been introduced as a Beta feature.
+  This means it is intended for testing in staging environments. It not intended
+  for use in Production environments.
+  You can read more about Secrets Management in
+  [our docs page](https://docs.konghq.com/gateway/latest/plan-and-deploy/security/secrets-management/backends-overview).
+  [#8403](https://github.com/Kong/kong/pull/8403)
 
 #### Performance
 
 - Improved the calculation of declarative configuration hash for big configurations
   The new method is faster and uses less memory
   [#8204](https://github.com/Kong/kong/pull/8204)
-- Several improvements in the Router decreased routing time and rebuild time. This should be
-  particularly noticeable when rebuilding on db-less environments
+- Multiple improvements in the Router. Amongst others:
+  - The router builds twice as fast compared to prior Kong versions
+  - Failures are cached and discarded faster (negative caching)
+  - Routes with header matching are cached
+  These changes should be particularly noticeable when rebuilding on db-less environments
   [#8087](https://github.com/Kong/kong/pull/8087)
   [#8010](https://github.com/Kong/kong/pull/8010)
 
@@ -106,16 +226,19 @@ the [docs](https://docs.konghq.com/gateway/2.7.x/reference/external-plugins/).
 
 - **Response-ratelimiting**: Redis ACL support,
   and genenarized Redis connection support for usernames.
-  Thanks, [@27ascii](https://github.com/27ascii) for the origina contribution!
+  Thanks, [@27ascii](https://github.com/27ascii) for the original contribution!
   [#8213](https://github.com/Kong/kong/pull/8213)
 - **ACME**: Add rsa_key_size config option
   Thanks, [lodrantl](https://github.com/lodrantl)!
   [#8114](https://github.com/Kong/kong/pull/8114)
+- **Prometheus**: Added gauges to track `ngx.timer.running_count()` and
+  `ngx.timer.pending_count()`
+  [#8387](https://github.com/Kong/kong/pull/8387)
 
 #### Clustering
 
 - `CLUSTERING_MAX_PAYLOAD` is now configurable in kong.conf
-  Thanks, [@andrewgknew](https://github.com/andrewgknew)!
+  Thanks, [@andrewgkew](https://github.com/andrewgkew)!
   [#8337](https://github.com/Kong/kong/pull/8337)
 
 #### Admin API
@@ -145,6 +268,14 @@ the [docs](https://docs.konghq.com/gateway/2.7.x/reference/external-plugins/).
   Thanks, [@mpenick](https://github.com/mpenick)!
   [#8226](https://github.com/Kong/kong/pull/8226)
 
+#### Balancer
+
+- Targets keep their health status when upstreams are updated.
+  [#8394](https://github.com/Kong/kong/pull/8394)
+- One debug message which was erroneously using the `error` log level
+  has been downgraded to the appropiate `debug` log level.
+  [#8410](https://github.com/Kong/kong/pull/8410)
+
 #### Clustering
 
 - Replaced cryptic error message with more useful one when
@@ -160,6 +291,10 @@ the [docs](https://docs.konghq.com/gateway/2.7.x/reference/external-plugins/).
 
 - Phase names are correctly selected when performing phase checks
   [#8208](https://github.com/Kong/kong/pull/8208)
+- Fixed a bug in the go-PDK where if `kong.request.getrawbody` was
+  big enough to be buffered into a temporary file, it would return an
+  an empty string.
+  [#8390](https://github.com/Kong/kong/pull/8390)
 
 #### Plugins
 
@@ -169,6 +304,9 @@ the [docs](https://docs.konghq.com/gateway/2.7.x/reference/external-plugins/).
 - **External Plugins**: Unwrap `ConsumerSpec` and `AuthenticateArgs`.
   Thanks, [@raptium](https://github.com/raptium)!
   [#8280](https://github.com/Kong/kong/pull/8280)
+- **External Plugins**: Fixed a problem in the stream subsystem would attempt to load
+  HTTP headers.
+  [#8414](https://github.com/Kong/kong/pull/8414)
 - **CORS**: The CORS plugin does not send the `Vary: Origin` header any more when
   the header `Access-Control-Allow-Origin` is set to `*`.
   Thanks, [@jkla-dr](https://github.com/jkla-dr)!
@@ -176,6 +314,14 @@ the [docs](https://docs.konghq.com/gateway/2.7.x/reference/external-plugins/).
 - **AWS-Lambda**: Fixed incorrect behavior when configured to use an http proxy
   and deprecated the `proxy_scheme` config attribute for removal in 3.0
   [#8406](https://github.com/Kong/kong/pull/8406)
+- **oauth2**: The plugin clears the `X-Authenticated-UserId` and
+  `X-Authenticated-Scope` headers when it configured in logical OR and
+  is used in conjunction with another authentication plugin.
+  [#8422](https://github.com/Kong/kong/pull/8422)
+- **Datadog**: The plugin schema now lists the default values
+  for configuration options in a single place instead of in two
+  separate places.
+  [#8315](https://github.com/Kong/kong/pull/8315)
 
 
 ## [2.7.1]
@@ -269,7 +415,10 @@ In this release we continued our work on better performance:
 - Fixed intermittent botting error which happened when a custom plugin had inter-dependent entity schemas
   on its custom DAO and they were loaded in an incorrect order
   [#7911](https://github.com/Kong/kong/pull/7911)
-
+- Fixed problem when the consistent hash header is not found, the balancer tries to hash a nil value.
+  [#8141](https://github.com/Kong/kong/pull/8141)
+- Fixed DNS client fails to resolve unexpectedly in `ssl_cert` and `ssl_session_fetch` phases.
+  [#8161](https://github.com/Kong/kong/pull/8161)
 
 #### PDK
 

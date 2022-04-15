@@ -9,7 +9,6 @@ local constants    = require "kong.constants"
 local singletons   = require "kong.singletons"
 local certificate  = require "kong.runloop.certificate"
 local concurrency  = require "kong.concurrency"
-local declarative  = require "kong.db.declarative"
 local workspaces   = require "kong.workspaces"
 local lrucache     = require "resty.lrucache"
 
@@ -36,7 +35,6 @@ local exit         = ngx.exit
 local exec         = ngx.exec
 local header       = ngx.header
 local timer_at     = ngx.timer.at
-local timer_every  = ngx.timer.every
 local subsystem    = ngx.config.subsystem
 local clear_header = ngx.req.clear_header
 local http_version = ngx.req.http_version
@@ -216,8 +214,8 @@ local function register_balancer_events(core_cache, worker_events, cluster_event
     local target = data.entity
     -- => to worker_events node handler
     local ok, err = worker_events.post("balancer", "targets", {
-        operation = data.operation,
-        entity = data.entity,
+        operation = operation,
+        entity = target,
       })
     if not ok then
       log(ERR, "failed broadcasting target ",
@@ -288,15 +286,15 @@ local function register_balancer_events(core_cache, worker_events, cluster_event
     local operation = data.operation
     local upstream = data.entity
     local ws_id = workspaces.get_workspace_id()
-    if not data.entity.ws_id then
+    if not upstream.ws_id then
       log(DEBUG, "Event crud ", operation, " for upstream ", upstream.id,
           " received without ws_id, adding.")
-      data.entity.ws_id = ws_id
+      upstream.ws_id = ws_id
     end
     -- => to worker_events node handler
     local ok, err = worker_events.post("balancer", "upstreams", {
-        operation = data.operation,
-        entity = data.entity,
+        operation = operation,
+        entity = upstream,
       })
     if not ok then
       log(ERR, "failed broadcasting upstream ",
@@ -316,14 +314,14 @@ local function register_balancer_events(core_cache, worker_events, cluster_event
     local operation = data.operation
     local upstream = data.entity
 
-    if not data.entity.ws_id then
-      log(CRIT, "Operation ", operation, " for upstream ", data.entity.id,
+    if not upstream.ws_id then
+      log(CRIT, "Operation ", operation, " for upstream ", upstream.id,
           " received without workspace, discarding.")
       return
     end
 
-    singletons.core_cache:invalidate_local("balancer:upstreams")
-    singletons.core_cache:invalidate_local("balancer:upstreams:" .. upstream.id)
+    core_cache:invalidate_local("balancer:upstreams")
+    core_cache:invalidate_local("balancer:upstreams:" .. upstream.id)
 
     -- => to balancer update
     balancer.on_upstream_event(operation, upstream)
@@ -360,27 +358,56 @@ local function register_events()
 
     -- declarative config updates
 
-    worker_events.register(function(default_ws)
+    local current_router_hash
+    local current_plugins_hash
+    local current_balancer_hash
+
+    worker_events.register(function(data)
       if ngx.worker.exiting() then
-        log(NOTICE, "declarative flip config canceled: process exiting")
+        log(NOTICE, "declarative reconfigure canceled: process exiting")
         return true
       end
 
-      local ok, err = concurrency.with_coroutine_mutex(FLIP_CONFIG_OPTS, function()
-        balancer.stop_healthcheckers(CLEAR_HEALTH_STATUS_DELAY)
+      local default_ws
+      local router_hash
+      local plugins_hash
+      local balancer_hash
 
-        kong.cache:flip()
-        core_cache:flip()
+      if type(data) == "table" then
+        default_ws = data[1]
+        router_hash = data[2]
+        plugins_hash = data[3]
+        balancer_hash = data[4]
+      end
+
+      local ok, err = concurrency.with_coroutine_mutex(FLIP_CONFIG_OPTS, function()
+        local rebuild_balancer = balancer_hash == nil or balancer_hash ~= current_balancer_hash
+        if rebuild_balancer then
+          balancer.stop_healthcheckers(CLEAR_HEALTH_STATUS_DELAY)
+        end
+
+        kong.core_cache:purge()
+        kong.cache:purge()
+
+        balancer.stop_healthcheckers(CLEAR_HEALTH_STATUS_DELAY)
 
         kong.default_workspace = default_ws
         ngx.ctx.workspace = kong.default_workspace
 
-        rebuild_plugins_iterator(PLUGINS_ITERATOR_SYNC_OPTS)
-        rebuild_router(ROUTER_SYNC_OPTS)
+        if plugins_hash == nil or plugins_hash ~= current_plugins_hash then
+          rebuild_plugins_iterator(PLUGINS_ITERATOR_SYNC_OPTS)
+          current_plugins_hash = plugins_hash
+        end
 
-        balancer.init()
+        if router_hash == nil or router_hash ~= current_router_hash then
+          rebuild_router(ROUTER_SYNC_OPTS)
+          current_router_hash = router_hash
+        end
 
-        declarative.lock()
+        if rebuild_balancer then
+          balancer.init()
+          current_balancer_hash = balancer_hash
+        end
 
         return true
       end)
@@ -388,14 +415,12 @@ local function register_events()
       if not ok then
         log(ERR, "config flip failed: ", err)
       end
-    end, "declarative", "flip_config")
+    end, "declarative", "reconfigure")
 
     return
   end
 
-
   -- events dispatcher
-
 
   worker_events.register(function(data)
     if not data.schema then
@@ -519,10 +544,7 @@ local function register_events()
     end
   end, "crud", "certificates")
 
-
-  if kong.configuration.role ~= "control_plane" then
-    register_balancer_events(core_cache, worker_events, cluster_events)
-  end
+  register_balancer_events(core_cache, worker_events, cluster_events)
 end
 
 
@@ -1058,11 +1080,11 @@ return {
 
       update_lua_mem(true)
 
-      register_events()
-
       if kong.configuration.role == "control_plane" then
         return
       end
+
+      register_events()
 
       -- initialize balancers for active healthchecks
       timer_at(0, function()
@@ -1113,7 +1135,7 @@ return {
           on_timeout = "return_true",
         }
 
-        timer_every(worker_state_update_frequency, function(premature)
+        local function rebuild_router_timer(premature)
           if premature then
             return
           end
@@ -1126,7 +1148,17 @@ return {
           if not ok then
             log(ERR, "could not rebuild router via timer: ", err)
           end
-        end)
+
+          local _, err = timer_at(worker_state_update_frequency, rebuild_router_timer)
+          if err then
+            log(ERR, "could not schedule timer to rebuild router: ", err)
+          end
+        end
+
+        local _, err = timer_at(worker_state_update_frequency, rebuild_router_timer)
+        if err then
+          log(ERR, "could not schedule timer to rebuild router: ", err)
+        end
 
         local plugins_iterator_async_opts = {
           name = "plugins_iterator",
@@ -1134,16 +1166,27 @@ return {
           on_timeout = "return_true",
         }
 
-        timer_every(worker_state_update_frequency, function(premature)
+        local function rebuild_plugins_iterator_timer(premature)
           if premature then
             return
           end
 
-          local ok, err = rebuild_plugins_iterator(plugins_iterator_async_opts)
-          if not ok then
+          local _, err = rebuild_plugins_iterator(plugins_iterator_async_opts)
+          if err then
             log(ERR, "could not rebuild plugins iterator via timer: ", err)
           end
-        end)
+
+          local _, err = timer_at(worker_state_update_frequency, rebuild_plugins_iterator_timer)
+          if err then
+            log(ERR, "could not schedule timer to rebuild plugins iterator: ", err)
+          end
+        end
+
+        local _, err = timer_at(worker_state_update_frequency, rebuild_plugins_iterator_timer)
+        if err then
+          log(ERR, "could not schedule timer to rebuild plugins iterator: ", err)
+        end
+
       end
     end,
     after = NOOP,
@@ -1459,25 +1502,39 @@ return {
       end
 
       -- clear hop-by-hop request headers:
-      for _, header_name in csv(var.http_connection) do
-        -- some of these are already handled by the proxy module,
-        -- upgrade being an exception that is handled below with
-        -- special semantics.
-        if header_name == "upgrade" then
-          if var.upstream_connection == "keep-alive" then
+      local http_connection = var.http_connection
+      if http_connection ~= "keep-alive" and
+         http_connection ~= "close"      and
+         http_connection ~= "upgrade"
+      then
+        for _, header_name in csv(http_connection) do
+          -- some of these are already handled by the proxy module,
+          -- upgrade being an exception that is handled below with
+          -- special semantics.
+          if header_name == "upgrade" then
+            if var.upstream_connection == "keep-alive" then
+              clear_header(header_name)
+            end
+
+          else
             clear_header(header_name)
           end
-
-        else
-          clear_header(header_name)
         end
       end
 
       -- add te header only when client requests trailers (proxy removes it)
-      for _, header_name in csv(var.http_te) do
-        if header_name == "trailers" then
+      local http_te = var.http_te
+      if http_te then
+        if http_te == "trailers" then
           var.upstream_te = "trailers"
-          break
+
+        else
+          for _, header_name in csv(http_te) do
+            if header_name == "trailers" then
+              var.upstream_te = "trailers"
+              break
+            end
+          end
         end
       end
 
@@ -1501,9 +1558,15 @@ return {
       end
 
       -- clear hop-by-hop response headers:
-      for _, header_name in csv(var.upstream_http_connection) do
-        if header_name ~= "close" and header_name ~= "upgrade" and header_name ~= "keep-alive" then
-          header[header_name] = nil
+      local upstream_http_connection = var.upstream_http_connection
+      if upstream_http_connection ~= "keep-alive" and
+         upstream_http_connection ~= "close"      and
+         upstream_http_connection ~= "upgrade"
+      then
+        for _, header_name in csv(upstream_http_connection) do
+          if header_name ~= "close" and header_name ~= "upgrade" and header_name ~= "keep-alive" then
+            header[header_name] = nil
+          end
         end
       end
 
