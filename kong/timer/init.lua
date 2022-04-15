@@ -9,30 +9,34 @@ local constants = require("kong.timer.constants")
 
 local ngx = ngx
 
-local max = math.max
-local random = math.random
-local modf = math.modf
-local huge = math.huge
-local abs = math.abs
+local math_max = math.max
+local math_min = math.min
+local math_random = math.random
+local math_modf = math.modf
+local math_huge = math.huge
+local math_abs = math.abs
+
 local string_format = string.format
+
+-- luacheck: push ignore
+local ngx_log = ngx.log
+local ngx_ERR = ngx.ERR
+local ngx_DEBUG = ngx.DEBUG
+local ngx_NOTICE = ngx.NOTICE
+-- luacheck: pop
+
+local ngx_timer_at = ngx.timer.at
+local ngx_timer_every = ngx.timer.every
+local ngx_sleep = ngx.sleep
+local ngx_worker_exiting = ngx.worker.exiting
+local ngx_now = ngx.now
+local ngx_update_time = ngx.update_time
+
 local pairs = pairs
+local ipairs = ipairs
 local tostring = tostring
 local type = type
 local next = next
-
--- luacheck: push ignore
-local log = ngx.log
-local ERR = ngx.ERR
-local DEBUG = ngx.DEBUG
-local NOTICE = ngx.NOTICE
--- luacheck: pop
-
-local timer_at = ngx.timer.at
-local timer_every = ngx.timer.every
-local sleep = ngx.sleep
-local exiting = ngx.worker.exiting
-local now = ngx.now
-local update_time = ngx.update_time
 
 local assert = utils.assert
 
@@ -40,17 +44,17 @@ local _M = {}
 
 
 local function log_notice(...)
-    log(NOTICE, "[timer] ", ...)
+    ngx_log(ngx_NOTICE, "[timer] ", ...)
 end
 
 
 local function log_error(...)
-    log(ERR, "[timer] ", ...)
+    ngx_log(ngx_ERR, "[timer] ", ...)
 end
 
 
 local function native_timer_at(delay, callback, ...)
-    local ok, err = timer_at(delay, callback, ...)
+    local ok, err = ngx_timer_at(delay, callback, ...)
     assert(ok,
         constants.MSG_FATAL_FAILED_CREATE_NATIVE_TIMER
         -- `err` maybe `nil`
@@ -66,7 +70,7 @@ local function wake_up_super_timer(self)
     local count = semaphore_super:count()
 
     if count <= 0 then
-        semaphore_super:post(abs(count) + 1)
+        semaphore_super:post(math_abs(count) + 1)
     end
 end
 
@@ -79,7 +83,7 @@ local function wake_up_mover_timer(self)
     local count = semaphore_mover:count()
 
     if count <= 0 then
-        semaphore_mover:post(abs(count) + 1)
+        semaphore_mover:post(math_abs(count) + 1)
     end
 end
 
@@ -99,7 +103,7 @@ local function mover_timer_callback(premature, self)
         return
     end
 
-    while not exiting() and not self.destory do
+    while not ngx_worker_exiting() and not self.destory do
         log_notice("waiting on `semaphore_mover` for 1 second")
 
         local ok, err = semaphore_mover:wait(1)
@@ -120,10 +124,10 @@ local function mover_timer_callback(premature, self)
         end
 
         if not is_no_ready_jobs then
+            local temp = wheels.pending_jobs
             wheels.pending_jobs = wheels.ready_jobs
+            wheels.ready_jobs = temp
 
-            -- TODO; use `utils.table_new`
-            wheels.ready_jobs = {}
             semaphore_worker:post(opt_threads)
         end
 
@@ -151,7 +155,7 @@ local function worker_timer_callback(premature, self, thread_index)
     local wheels = self.wheels
     local jobs = self.jobs
 
-    while not exiting() and not self.destory do
+    while not ngx_worker_exiting() and not self.destory do
         log_notice("waiting on `semaphore_worker` for 1 second in thread #"
             .. thread_index)
         local ok, err = semaphore_worker:wait(1)
@@ -261,6 +265,7 @@ local function super_timer_callback(premature, self)
     local semaphore_super = self.semaphore_super
     local threads = self.threads
     local opt_threads = self.opt.threads
+    local opt_resolution = self.opt.resolution
     local wheels = self.wheels
 
     self.super_timer = true
@@ -275,13 +280,13 @@ local function super_timer_callback(premature, self)
         end
     end
 
-    sleep(constants.RESOLUTION)
+    ngx_sleep(opt_resolution)
 
-    update_time()
-    wheels.real_time = now()
-    wheels.expected_time = wheels.real_time - constants.RESOLUTION
+    ngx_update_time()
+    wheels.real_time = ngx_now()
+    wheels.expected_time = wheels.real_time - opt_resolution
 
-    while not exiting() and not self.destory do
+    while not ngx_worker_exiting() and not self.destory do
         if self.enable then
             wheels:sync_time()
 
@@ -290,8 +295,8 @@ local function super_timer_callback(premature, self)
             end
 
             wheels:update_closest()
-            local closest = max(wheels.closest, constants.RESOLUTION)
-            wheels.closest = huge
+            local closest = math_max(wheels.closest, 0.1)
+            wheels.closest = math_huge
 
             log_notice(string_format(
                 "waiting on `semaphore_super` for %f second",
@@ -304,7 +309,7 @@ local function super_timer_callback(premature, self)
             end
 
         else
-            sleep(constants.RESOLUTION)
+            ngx_sleep(0.1)
         end
     end
 end
@@ -314,7 +319,7 @@ local function create(self ,name, callback, delay, once, args)
     local wheels = self.wheels
     local jobs = self.jobs
     if not name then
-        name = tostring(random())
+        name = tostring(math_random())
     end
 
     if jobs[name] then
@@ -365,10 +370,10 @@ function _M.configure(timer_sys, options)
             assert(options.restart_thread_after_runs > 0,
                 "expected `restart_thread_after_runs` to be greater than 0")
 
-            local _, tmp = modf(options.restart_thread_after_runs)
+            local _, tmp = math_modf(options.restart_thread_after_runs)
 
             assert(tmp == 0,
-                "expected `restart_thread_after_runs` to be a integer")
+                "expected `restart_thread_after_runs` to be an integer")
         end
 
         if options.threads then
@@ -378,12 +383,64 @@ function _M.configure(timer_sys, options)
             assert(options.threads > 0,
             "expected `threads` to be greater than 0")
 
-            local _, tmp = modf(options.threads)
-            assert(tmp == 0, "expected `threads` to be a integer")
+            local _, tmp = math_modf(options.threads)
+            assert(tmp == 0, "expected `threads` to be an integer")
+        end
+
+        if options.resolution then
+            assert(type(options.resolution) == "number",
+                "expected `resolution` to be a number")
+
+            assert(utils.float_compare(options.resolution, 0.1) >= 0,
+            "expected `resolution` to be greater than or equal to 0.1")
+        end
+
+        if options.wheel_setting then
+            local wheel_setting = options.wheel_setting
+            local level = wheel_setting.level
+
+            assert(type(wheel_setting) == "table",
+                "expected `wheel_setting` to be a number")
+
+            assert(type(wheel_setting.level) == "number",
+                "expected `wheel_setting.level` to be a number")
+
+            assert(type(wheel_setting.slots) == "table",
+                "expected `wheel_setting.slots` to be a table")
+
+            local slots_length = #wheel_setting.slots
+
+            assert(level == slots_length,
+                "expected `wheel_setting.level`"
+             .. " is equal to "
+             .. "the length of `wheel_setting.slots`")
+
+            for i, v in ipairs(wheel_setting.slots) do
+                assert(type(v) == "number",string_format(
+                    "expected `wheel_setting.slots[%d]` to be a number", i))
+
+                assert(v >= 1, string_format(
+                    "expected `wheel_setting.slots[%d]`"
+                 .. "to be greater than 1", i))
+
+                local _, tmp = math_modf(v)
+
+                assert(tmp == 0, string_format(
+                    "expected `wheel_setting.slots[%d]` to be an integer", i))
+            end
+
         end
     end
 
     local opt = {
+        wheel_setting = options
+            and options.wheel_setting
+            or constants.DEFAULT_WHEEL_SETTING,
+
+        resolution = options
+            and options.resolution
+            or  constants.DEFAULT_RESOLUTION,
+
         -- restart the thread after every n jobs have been run
         restart_thread_after_runs = options
             and options.restart_thread_after_runsor
@@ -402,10 +459,17 @@ function _M.configure(timer_sys, options)
 
     timer_sys.opt = opt
 
+    timer_sys.max_expire = opt.resolution
+    for _, v in ipairs(opt.wheel_setting.slots) do
+        timer_sys.max_expire = timer_sys.max_expire * v
+    end
+    timer_sys.max_expire = timer_sys.max_expire - 2
+
     -- enable/diable entire timing system
     timer_sys.enable = false
 
     timer_sys.threads = utils.table_new(opt.threads, 0)
+
     timer_sys.jobs = {}
 
     -- has the super timer already been created?
@@ -422,7 +486,7 @@ function _M.configure(timer_sys, options)
 
     timer_sys.semaphore_mover = semaphore.new()
 
-    timer_sys.wheels = wheel_group.new()
+    timer_sys.wheels = wheel_group.new(opt.wheel_setting, opt.resolution)
 
     for i = 1, timer_sys.opt.threads do
         timer_sys.threads[i] = {
@@ -457,8 +521,8 @@ function _M.start(timer_sys)
     end
 
     if not timer_sys.enable then
-        update_time()
-        timer_sys.wheels.expected_time = now()
+        ngx_update_time()
+        timer_sys.wheels.expected_time = ngx_now()
     end
 
     timer_sys.enable = true
@@ -488,11 +552,11 @@ function _M:once(name, callback, delay, ...)
     assert(type(delay) == "number", "expected `delay to be a number")
     assert(delay >= 0, "expected `delay` to be greater than or equal to 0")
 
-    if delay >= constants.MAX_EXPIRE
-        or (delay ~= 0 and delay < constants.RESOLUTION)then
+    if delay >= self.max_expire
+        or (delay ~= 0 and delay < self.opt.resolution)then
 
         log_notice("fallback to ngx.timer.every [delay = " .. delay .. "]")
-        local ok, err = timer_at(delay, callback, ...)
+        local ok, err = ngx_timer_at(delay, callback, ...)
         return ok ~= nil, err
     end
 
@@ -512,12 +576,12 @@ function _M:every(name, callback, interval, ...)
     assert(type(interval) == "number", "expected `interval to be a number")
     assert(interval > 0, "expected `interval` to be greater than or equal to 0")
 
-    if interval >= constants.MAX_EXPIRE
-        or interval < constants.RESOLUTION then
+    if interval >= self.max_expire
+        or interval < self.opt.resolution then
 
         log_notice("fallback to ngx.timer.every [interval = "
             .. interval .. "]")
-        local ok, err = timer_every(interval, callback, ...)
+        local ok, err = ngx_timer_every(interval, callback, ...)
         return ok ~= nil, err
     end
 

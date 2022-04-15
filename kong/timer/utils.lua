@@ -1,16 +1,18 @@
-local pow = math.pow
--- local floor = math.floor
-local pcall = pcall
-
-local std_assert = assert
-local pairs = pairs
+local math_pow = math.pow
+local math_floor = math.floor
 
 local ngx = ngx
 
 -- luacheck: push ignore
-local log = ngx.log
-local ERR = ngx.ERR
+local ngx_log = ngx.log
+local ngx_ERR = ngx.ERR
 -- luacheck: pop
+
+local pcall = pcall
+local pairs = pairs
+local next = next
+
+local std_assert = assert
 
 local table_isempty
 
@@ -22,12 +24,7 @@ do
 
     else
         table_isempty = function(tbl)
-            -- luacheck: ignore
-            for _, _ in pairs(tbl) do
-                return false
-            end
-
-            return true
+            return next(tbl) == nil
         end
     end
 end
@@ -100,7 +97,8 @@ end
 
 function _M.get_variance(cur_value, cur_count, old_variance, old_avg)
     -- recurrence formula
-    return (((cur_count - 1) / pow(cur_count, 2)) * pow(cur_value - old_avg, 2))
+    return (((cur_count - 1)
+        / math_pow(cur_count, 2)) * math_pow(cur_value - old_avg, 2))
         + (((cur_count - 1) / cur_count) * old_variance)
 end
 
@@ -120,7 +118,11 @@ end
 
 
 function _M.table_merge(dst, src)
-    assert(dst and src)
+    assert(dst)
+
+    if not src then
+        return
+    end
 
     for k, v in pairs(src) do
         assert(not dst[k])
@@ -146,6 +148,12 @@ function _M.float_compare(left, right)
 
     return 0
 end
+
+
+function _M.convert_second_to_step(second, resolution)
+    return math_floor(_M.round(second / resolution, 3))
+end
+
 
 function _M.print_queue(self)
     local pending_jobs = self.wheels.pending_jobs
@@ -229,10 +237,9 @@ function _M.print_wheel(wheels)
     ngx.log(ngx.ERR, str)
 end
 
-
---[[ function _M.round(value, digits)
-    local x = 10 * digits
-    return floor(value * x + 0.5) / x
-end ]]
+function _M.round(value, digits)
+    local x = 10 ^ digits
+    return math_floor(value * x + 0.1) / x
+end
 
 return _M
