@@ -1,8 +1,6 @@
 local utils = require("kong.timer.utils")
 local wheel = require("kong.timer.wheel")
 
-local math_floor = math.floor
-
 local table_insert = table.insert
 
 local string_format = string.format

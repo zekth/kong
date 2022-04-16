@@ -9,8 +9,6 @@ local constants = require("kong.timer.constants")
 
 local ngx = ngx
 
-local math_max = math.max
-local math_min = math.min
 local math_random = math.random
 local math_modf = math.modf
 local math_huge = math.huge
@@ -295,8 +293,16 @@ local function super_timer_callback(premature, self)
             end
 
             wheels:update_closest()
-            local closest = math_max(wheels.closest, 0.1)
+            local closest = wheels.closest
             wheels.closest = math_huge
+
+            if closest < 0.1 then
+                closest = 0.1
+            end
+
+            if closest > 1 then
+                closest = 1
+            end
 
             log_notice(string_format(
                 "waiting on `semaphore_super` for %f second",
