@@ -68,9 +68,6 @@ build = {
     ["kong.timer.wheel"] = "kong/timer/wheel/init.lua",
     ["kong.timer.wheel.group"] = "kong/timer/wheel/group.lua",
 
-    ["kong.patches.healthcheck"] = "kong/patches/healthcheck.lua",
-    ["kong.patches.timer"] = "kong/patches/timer.lua",
-
     ["kong.conf_loader"] = "kong/conf_loader/init.lua",
     ["kong.conf_loader.listeners"] = "kong/conf_loader/listeners.lua",
 
