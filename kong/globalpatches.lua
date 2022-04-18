@@ -74,11 +74,11 @@ return function(options)
     local timer_sys = { }
 
     if options.cli or options.rbusted then
-      timer_module.configure(timer_sys, { threads = 32 })
-      timer_module.start(timer_sys)
+      timer_sys = timer_module.new({ threads = 32 })
+      timer_sys:start()
 
     else
-      timer_module.configure(timer_sys, {})
+      timer_sys = timer_module.new()
     end
 
     _G.ngx.timer.at = function(delay, callback, ...)
@@ -90,7 +90,7 @@ return function(options)
     end
 
     _G.hack_timer_sys_start = function ()
-      timer_module.start(timer_sys)
+      timer_sys:start()
     end
   end
 

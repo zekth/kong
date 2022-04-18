@@ -19,6 +19,7 @@ local string_format = string.format
 -- luacheck: push ignore
 local ngx_log = ngx.log
 local ngx_ERR = ngx.ERR
+local ngx_WARN = ngx.WARN
 local ngx_DEBUG = ngx.DEBUG
 local ngx_NOTICE = ngx.NOTICE
 -- luacheck: pop
@@ -46,11 +47,20 @@ local function log_notice(...)
 end
 
 
+local function log_warn(...)
+    ngx_log(ngx_WARN, "[timer] ", ...)
+end
+
+
 local function log_error(...)
     ngx_log(ngx_ERR, "[timer] ", ...)
 end
 
 
+---call the native `ngx.timer.at`
+---@param delay number
+---@param callback function
+---@param ... any
 local function native_timer_at(delay, callback, ...)
     local ok, err = ngx_timer_at(delay, callback, ...)
     assert(ok,
@@ -60,8 +70,8 @@ local function native_timer_at(delay, callback, ...)
 end
 
 
--- post some resources until `self.semaphore_super:count() == 1`
--- TODO: rename the first argument ?
+---post some resources until `self.semaphore_super:count() == 1`
+---@TODO: rename the first argument ?
 local function wake_up_super_timer(self)
     local semaphore_super = self.semaphore_super
 
@@ -73,8 +83,8 @@ local function wake_up_super_timer(self)
 end
 
 
--- post some resources until `self.semaphore_mover:count() == 1`
--- TODO: rename the first argument ?
+---post some resources until `self.semaphore_mover:count() == 1`
+---@TODO: rename the first argument ?
 local function wake_up_mover_timer(self)
     local semaphore_mover = self.semaphore_mover
 
@@ -86,8 +96,8 @@ local function wake_up_mover_timer(self)
 end
 
 
--- move all jobs from `self.wheels.ready_jobs` to `self.wheels.pending_jobs`
--- wake up the worker timer
+---move all jobs from `self.wheels.ready_jobs` to `self.wheels.pending_jobs`
+---and wake up all worker timers
 local function mover_timer_callback(premature, self)
     log_notice("mover timer has been started")
 
@@ -97,13 +107,13 @@ local function mover_timer_callback(premature, self)
     local wheels = self.wheels
 
     if premature then
-        log_notice("exit mover timer due to `premature`")
+        log_warn("exit mover timer due to `premature`")
         return
     end
 
-    while not ngx_worker_exiting() and not self.destory do
-        log_notice("waiting on `semaphore_mover` for 1 second")
+    while not ngx_worker_exiting() and not self._destroy do
 
+        -- one second is for the graceful exit of nginx
         local ok, err = semaphore_mover:wait(1)
 
         if not ok and err ~= "timeout" then
@@ -122,6 +132,8 @@ local function mover_timer_callback(premature, self)
         end
 
         if not is_no_ready_jobs then
+            -- just swap two lists
+            -- `wheels.ready_jobs = {}` will bring work to GC
             local temp = wheels.pending_jobs
             wheels.pending_jobs = wheels.ready_jobs
             wheels.ready_jobs = temp
@@ -144,7 +156,7 @@ local function worker_timer_callback(premature, self, thread_index)
     log_notice("thread #", thread_index, " has been started")
 
     if premature then
-        log_notice("exit thread #", thread_index, " due to `premature`")
+        log_warn("exit thread #", thread_index, " due to `premature`")
         return
     end
 
@@ -153,9 +165,9 @@ local function worker_timer_callback(premature, self, thread_index)
     local wheels = self.wheels
     local jobs = self.jobs
 
-    while not ngx_worker_exiting() and not self.destory do
-        log_notice("waiting on `semaphore_worker` for 1 second in thread #"
-            .. thread_index)
+    while not ngx_worker_exiting() and not self._destroy do
+
+        -- one second is for the graceful exit of nginx
         local ok, err = semaphore_worker:wait(1)
 
         if not ok and err ~= "timeout" then
@@ -167,49 +179,22 @@ local function worker_timer_callback(premature, self, thread_index)
         while not utils.table_is_empty(wheels.pending_jobs) do
             thread.counter.runs = thread.counter.runs + 1
 
-            log_notice(string_format(
-                "thread #%d was run %d times",
-                thread_index, thread.counter.runs
-            ))
-
             local _, job = next(wheels.pending_jobs)
 
             wheels.pending_jobs[job.name] = nil
 
-            log_notice(string_format(
-                "timer %s is expected to be executed by thread #%d",
-                job.name, thread_index
-            ))
-
             if not job:is_runnable() then
-                log_notice(string_format(
-                    "timer %s is not runnable",
-                    job.name
-                ))
-
                 goto continue
             end
 
-            log_notice(string_format(
-                "execute timer %s in thread #",
-                job.name, thread_index
-            ))
             job:execute()
 
             if job:is_oneshot() then
-                log_notice(string_format(
-                    "timer %s need to be executed only once",
-                    job.name
-                ))
                 jobs[job.name] = nil
                 goto continue
             end
 
             if job:is_runnable() then
-                log_notice(string_format(
-                    "reschedule timer %s in thread #%d",
-                    job.name, thread_index
-                ))
                 wheels:sync_time()
                 job:re_cal_next_pointer(wheels)
                 wheels:insert_job(job)
@@ -230,10 +215,6 @@ local function worker_timer_callback(premature, self, thread_index)
             -- when it is destroyed,
             -- including resources created by `job:execute()`
             -- it needs to be destroyed and recreated periodically.
-            log_notice(string_format(
-                "re-create thread #%d",
-                thread_index
-            ))
             native_timer_at(0, worker_timer_callback, self, thread_index)
             break
         end
@@ -256,7 +237,7 @@ local function super_timer_callback(premature, self)
     log_notice("super timer has been started")
 
     if premature then
-        log_notice("exit super timer due to `premature`")
+        log_warn("exit super timer due to `premature`")
         return
     end
 
@@ -284,8 +265,10 @@ local function super_timer_callback(premature, self)
     wheels.real_time = ngx_now()
     wheels.expected_time = wheels.real_time - opt_resolution
 
-    while not ngx_worker_exiting() and not self.destory do
+    while not ngx_worker_exiting() and not self._destroy do
         if self.enable then
+
+            -- update the status of the wheel group
             wheels:sync_time()
 
             if not utils.table_is_empty(wheels.ready_jobs) then
@@ -296,17 +279,14 @@ local function super_timer_callback(premature, self)
             local closest = wheels.closest
             wheels.closest = math_huge
 
-            if closest < 0.1 then
-                closest = 0.1
+            if closest < constants.MIN_RESOLUTION then
+                closest = constants.MIN_RESOLUTION
             end
 
             if closest > 1 then
+                -- one second is for the graceful exit of nginx
                 closest = 1
             end
-
-            log_notice(string_format(
-                "waiting on `semaphore_super` for %f second",
-                closest))
 
             local ok, err = semaphore_super:wait(closest)
 
@@ -315,9 +295,11 @@ local function super_timer_callback(premature, self)
             end
 
         else
-            ngx_sleep(0.1)
+            ngx_sleep(constants.MIN_RESOLUTION)
         end
     end
+
+    log_notice("exit super timer")
 end
 
 
@@ -338,8 +320,6 @@ local function create(self ,name, callback, delay, once, args)
     job:enable()
     jobs[name] = job
 
-    log_notice("trying to create a new timer: " .. tostring(job))
-
     if job:is_immediate() then
         wheels.ready_jobs[name] = job
         wake_up_mover_timer(self)
@@ -359,8 +339,8 @@ local function create(self ,name, callback, delay, once, args)
 end
 
 
-function _M.configure(timer_sys, options)
-    assert(type(timer_sys) == "table")
+function _M.new(options)
+    local timer_sys = {}
 
     if timer_sys.configured then
         return false, "already configured"
@@ -487,7 +467,7 @@ function _M.configure(timer_sys, options)
     -- has the mover timer already been created?
     timer_sys.mover_timer = false
 
-    timer_sys.destory = false
+    timer_sys._destroy = false
 
     timer_sys.semaphore_super = semaphore.new()
 
@@ -508,53 +488,43 @@ function _M.configure(timer_sys, options)
         }
     end
 
-    timer_sys.configured = true
-
-    timer_sys.once = _M.once
-    timer_sys.every = _M.every
-    timer_sys.run = _M.run
-    timer_sys.pause = _M.pause
-    timer_sys.cancel = _M.cancel
-
-    return true, nil
+    return setmetatable(timer_sys, { __index = _M })
 end
 
 
-function _M.start(timer_sys)
+function _M:start()
     local ok, err = true, nil
 
-    if not timer_sys.super_timer then
-        native_timer_at(0, super_timer_callback, timer_sys)
-        native_timer_at(0, mover_timer_callback, timer_sys)
-        timer_sys.super_timer = true
+    if not self.super_timer then
+        native_timer_at(0, super_timer_callback, self)
+        native_timer_at(0, mover_timer_callback, self)
+        self.super_timer = true
     end
 
-    if not timer_sys.enable then
+    if not self.enable then
         ngx_update_time()
-        timer_sys.wheels.expected_time = ngx_now()
+        self.wheels.expected_time = ngx_now()
     end
 
-    timer_sys.enable = true
+    self.enable = true
 
     return ok, err
 end
 
 
-function _M.freeze(timer_sys)
-    timer_sys.enable = false
+function _M:freeze()
+    self.enable = false
 end
 
 
 -- TODO: rename this method
-function _M.unconfigure(timer_sys)
-    timer_sys.destory = true
-    timer_sys.configured = false
+function _M:destroy()
+    self._destroy = true
 end
 
 
 
 function _M:once(name, callback, delay, ...)
-    assert(self.configured, "the timer module is not configured")
     assert(self.enable, "the timer module is not started")
     assert(type(callback) == "function", "expected `callback` to be a function")
 
@@ -578,7 +548,6 @@ end
 
 
 function _M:every(name, callback, interval, ...)
-    assert(self.configured, "the timer module is not configured")
     assert(self.enable, "the timer module is not started")
     assert(type(callback) == "function", "expected `callback` to be a function")
 
@@ -661,9 +630,9 @@ function _M:cancel(name)
 end
 
 
-function _M.stats(timer_sys)
-    local pending_jobs = timer_sys.wheels.pending_jobs
-    local ready_jobs = timer_sys.wheels.ready_jobs
+function _M:stats()
+    local pending_jobs = self.wheels.pending_jobs
+    local ready_jobs = self.wheels.ready_jobs
 
     local sys = {
         running = 0,
@@ -674,7 +643,7 @@ function _M.stats(timer_sys)
     -- TODO: use `utils.table_new`
     local jobs = {}
 
-    for name, job in pairs(timer_sys.jobs) do
+    for name, job in pairs(self.jobs) do
         if job.running then
             sys.running = sys.running + 1
 

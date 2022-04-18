@@ -7,28 +7,38 @@ local string_format = string.format
 local assert = utils.assert
 
 local _M = {
+    -- number of worker timers
     DEFAULT_THREADS = 32,
 
     -- restart the thread after every 50 jobs have been run
     DEFAULT_RESTART_THREAD_AFTER_RUNS = 50,
 
+    -- not used at the moment
     DEFAULT_FORCE_UPDATE_TIME = true,
 
-    -- 100ms
+    -- The number of seconds corresponding to one unit
+    -- of spin of the pointer of the lowest wheel
     DEFAULT_RESOLUTION = 0.1,
 
     DEFAULT_WHEEL_SETTING = {
+        -- number of wheels
         level = 4,
+
+        -- slots_for_each_level[1] is the lowest wheel
+        -- slots_for_each_level[#slots_for_each_level] is the higest wheel
         slots_for_each_level = {10, 60, 60, 24},
     },
+
+    MIN_RESOLUTION = 0.1,
 
     MSG_FATAL_FAILED_CREATE_NATIVE_TIMER
         = "failed to create a native timer: ",
 }
 
 -- We don't need a high accuracy.
-assert(_M.DEFAULT_RESOLUTION,
-    "`DEFAULT_RESOLUTION` must be greater than or equal to 0.1")
+assert(_M.DEFAULT_RESOLUTION >= _M.MIN_RESOLUTION,
+    "`DEFAULT_RESOLUTION` must be greater than "
+ .. "or equal to `MIN_RESOLUTION`")
 
 
 do
