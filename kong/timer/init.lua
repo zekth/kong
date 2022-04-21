@@ -9,10 +9,12 @@ local constants = require("kong.timer.constants")
 
 local ngx = ngx
 
-local math_random = math.random
+local math_floor = math.floor
 local math_modf = math.modf
 local math_huge = math.huge
 local math_abs = math.abs
+local math_min = math.min
+local math_max = math.max
 
 local string_format = string.format
 
@@ -112,9 +114,8 @@ local function mover_timer_callback(premature, self)
     end
 
     while not ngx_worker_exiting() and not self._destroy do
-
-        -- one second is for the graceful exit of nginx
-        local ok, err = semaphore_mover:wait(1)
+        local ok, err =
+            semaphore_mover:wait(constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
 
         if not ok and err ~= "timeout" then
             log_error("failed to wait on `semaphore_mover`: " .. err)
@@ -166,9 +167,8 @@ local function worker_timer_callback(premature, self, thread_index)
     local jobs = self.jobs
 
     while not ngx_worker_exiting() and not self._destroy do
-
-        -- one second is for the graceful exit of nginx
-        local ok, err = semaphore_worker:wait(1)
+        local ok, err =
+            semaphore_worker:wait(constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
 
         if not ok and err ~= "timeout" then
             log_error(string_format(
@@ -267,7 +267,6 @@ local function super_timer_callback(premature, self)
 
     while not ngx_worker_exiting() and not self._destroy do
         if self.enable then
-
             -- update the status of the wheel group
             wheels:sync_time()
 
@@ -279,14 +278,9 @@ local function super_timer_callback(premature, self)
             local closest = wheels.closest
             wheels.closest = math_huge
 
-            if closest < constants.MIN_RESOLUTION then
-                closest = constants.MIN_RESOLUTION
-            end
-
-            if closest > 1 then
-                -- one second is for the graceful exit of nginx
-                closest = 1
-            end
+            closest = math_max(closest, opt_resolution)
+            closest = math_min(closest,
+                               constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
 
             local ok, err = semaphore_super:wait(closest)
 
@@ -307,7 +301,10 @@ local function create(self ,name, callback, delay, once, args)
     local wheels = self.wheels
     local jobs = self.jobs
     if not name then
-        name = tostring(math_random())
+        name = string_format("unix_timestamp=%f;counter=%d",
+                             math_floor(ngx_now() * 1000),
+                             self.id_counter)
+        self.id_counter = self.id_counter + 1
     end
 
     if jobs[name] then
@@ -341,10 +338,7 @@ end
 
 function _M.new(options)
     local timer_sys = {}
-
-    if timer_sys.configured then
-        return false, "already configured"
-    end
+    local err
 
     if options then
         assert(type(options) == "table", "expected `options` to be a table")
@@ -448,6 +442,9 @@ function _M.new(options)
 
     timer_sys.opt = opt
 
+    -- to generate some IDs
+    timer_sys.id_counter = 0
+
     timer_sys.max_expire = opt.resolution
     for _, v in ipairs(opt.wheel_setting.slots_for_each_level) do
         timer_sys.max_expire = timer_sys.max_expire * v
@@ -469,11 +466,17 @@ function _M.new(options)
 
     timer_sys._destroy = false
 
-    timer_sys.semaphore_super = semaphore.new()
+    timer_sys.semaphore_super, err = semaphore.new()
+    assert(timer_sys.semaphore_super,
+        "failed to create a semaphore: " .. tostring(err))
 
-    timer_sys.semaphore_worker = semaphore.new()
+    timer_sys.semaphore_worker, err = semaphore.new()
+    assert(timer_sys.semaphore_worker,
+        "failed to create a semaphore: " .. tostring(err))
 
-    timer_sys.semaphore_mover = semaphore.new()
+    timer_sys.semaphore_mover, err = semaphore.new()
+    assert(timer_sys.semaphore_mover,
+        "failed to create a semaphore: " .. tostring(err))
 
     timer_sys.wheels = wheel_group.new(opt.wheel_setting, opt.resolution)
 
