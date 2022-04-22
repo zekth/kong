@@ -4,14 +4,10 @@ local utils = require("kong.timer.utils")
 local wheel_group = require("kong.timer.wheel.group")
 local constants = require("kong.timer.constants")
 
--- TODO: use it to readuce overhead
--- local new_tab = require "table.new"
-
 local ngx = ngx
 
 local math_floor = math.floor
 local math_modf = math.modf
-local math_huge = math.huge
 local math_abs = math.abs
 local math_min = math.min
 local math_max = math.max
@@ -38,6 +34,7 @@ local ipairs = ipairs
 local tostring = tostring
 local type = type
 local next = next
+local select = select
 
 local assert = utils.assert
 
@@ -64,11 +61,7 @@ end
 ---@param callback function
 ---@param ... any
 local function native_timer_at(delay, callback, ...)
-    local ok, err = ngx_timer_at(delay, callback, ...)
-    assert(ok,
-        constants.MSG_FATAL_FAILED_CREATE_NATIVE_TIMER
-        -- `err` maybe `nil`
-        .. tostring(err))
+    return ngx_timer_at(delay, callback, ...)
 end
 
 
@@ -242,22 +235,8 @@ local function super_timer_callback(premature, self)
     end
 
     local semaphore_super = self.semaphore_super
-    local threads = self.threads
-    local opt_threads = self.opt.threads
     local opt_resolution = self.opt.resolution
     local wheels = self.wheels
-
-    self.super_timer = true
-
-    for i = 1, opt_threads do
-        if not threads[i].alive then
-            log_notice(string_format(
-                "creating thread #%d of %d",
-                i, opt_threads
-            ))
-            native_timer_at(0, worker_timer_callback, self, i)
-        end
-    end
 
     ngx_sleep(opt_resolution)
 
@@ -274,9 +253,7 @@ local function super_timer_callback(premature, self)
                 wake_up_mover_timer(self)
             end
 
-            wheels:update_closest()
-            local closest = wheels.closest
-            wheels.closest = math_huge
+            local closest = wheels:get_closest()
 
             closest = math_max(closest, opt_resolution)
             closest = math_min(closest,
@@ -297,7 +274,7 @@ local function super_timer_callback(premature, self)
 end
 
 
-local function create(self ,name, callback, delay, once, args)
+local function create(self, name, callback, delay, once, argc, argv)
     local wheels = self.wheels
     local jobs = self.jobs
     if not name then
@@ -313,7 +290,9 @@ local function create(self ,name, callback, delay, once, args)
 
     wheels:sync_time()
 
-    local job = job_module.new(wheels, name, callback, delay, once, args)
+    local job = job_module.new(wheels, name,
+                               callback, delay,
+                               once, argc, argv)
     job:enable()
     jobs[name] = job
 
@@ -380,7 +359,7 @@ function _M.new(options)
             local level = wheel_setting.level
 
             assert(type(wheel_setting) == "table",
-                "expected `wheel_setting` to be a number")
+                "expected `wheel_setting` to be a table")
 
             assert(type(wheel_setting.level) == "number",
                 "expected `wheel_setting.level` to be a number")
@@ -397,19 +376,27 @@ function _M.new(options)
              .. "the length of `wheel_setting.slots_for_each_level`")
 
             for i, v in ipairs(wheel_setting.slots_for_each_level) do
-                assert(type(v) == "number",string_format(
-                    "expected `wheel_setting.slots_for_each_level[%d]`"
-                 .. " to be a number", i))
+                if type(v) ~= "number" then
+                    error(string_format(
+                        "expected"
+                     .. " `wheel_setting.slots_for_each_level[%d]` "
+                     .. "to be a number",
+                        i))
+                end
 
-                assert(v >= 1, string_format(
-                    "expected `wheel_setting.slots_for_each_level[%d]`"
-                 .. " to be greater than 1", i))
+                if v < 1 then
+                    error(string_format(
+                        "expected"
+                     .. " `wheel_setting.slots_for_each_level[%d]` "
+                     .. "to be greater than 1",
+                        i))
+                end
 
-                local _, tmp = math_modf(v)
-
-                assert(tmp == 0, string_format(
-                    "expected `wheel_setting.slots_for_each_level[%d]`"
-                 .. " to be an integer", i))
+                if v ~= math_floor(v) then
+                    error(string_format(
+                        "expected `wheel_setting.slots_for_each_level[%d]`"
+                     .. " to be an integer", i))
+                end
             end
 
         end
@@ -458,11 +445,7 @@ function _M.new(options)
 
     timer_sys.jobs = {}
 
-    -- has the super timer already been created?
-    timer_sys.super_timer = false
-
-    -- has the mover timer already been created?
-    timer_sys.mover_timer = false
+    timer_sys.is_first_start = true
 
     timer_sys._destroy = false
 
@@ -496,12 +479,34 @@ end
 
 
 function _M:start()
-    local ok, err = true, nil
+    if self.is_first_start then
+        self._destroy = false
 
-    if not self.super_timer then
-        native_timer_at(0, super_timer_callback, self)
-        native_timer_at(0, mover_timer_callback, self)
-        self.super_timer = true
+        local ok, err = native_timer_at(0, super_timer_callback, self)
+
+        if not ok then
+            self:destroy()
+            return false, "failed to start: " .. err
+        end
+
+        ok, err = native_timer_at(0, mover_timer_callback, self)
+
+        if not ok then
+            self:destroy()
+            return false, "failed to start: " .. err
+        end
+
+        for thread_index = 1, #self.threads do
+            ok, err = native_timer_at(0, worker_timer_callback,
+                                      self, thread_index)
+
+            if not ok then
+                self:destroy()
+                return false, "failed to start: " .. err
+            end
+        end
+
+        self.is_first_start = false
     end
 
     if not self.enable then
@@ -511,7 +516,7 @@ function _M:start()
 
     self.enable = true
 
-    return ok, err
+    return true, nil
 end
 
 
@@ -523,6 +528,8 @@ end
 -- TODO: rename this method
 function _M:destroy()
     self._destroy = true
+    -- waiting for timers to exit automatically
+    ngx_sleep(1)
 end
 
 
@@ -535,7 +542,8 @@ function _M:once(name, callback, delay, ...)
     assert(delay >= 0, "expected `delay` to be greater than or equal to 0")
 
     if delay >= self.max_expire
-        or (delay ~= 0 and delay < self.opt.resolution)then
+        or (delay ~= 0 and delay < self.opt.resolution)
+    then
 
         log_notice("fallback to ngx.timer.every [delay = " .. delay .. "]")
         local ok, err = ngx_timer_at(delay, callback, ...)
@@ -544,7 +552,8 @@ function _M:once(name, callback, delay, ...)
 
     -- TODO: desc the logic and add related tests
     local name_or_false, err =
-        create(self, name, callback, delay, true, { ... })
+        create(self, name, callback, delay,
+               true, select("#", ...), { ... })
 
     return name_or_false, err
 end
@@ -567,7 +576,8 @@ function _M:every(name, callback, interval, ...)
     end
 
     local name_or_false, err =
-        create(self, name, callback, interval, false, { ... })
+        create(self, name, callback, interval,
+               false, select("#", ...), { ... })
 
     return name_or_false, err
 end
@@ -578,11 +588,12 @@ function _M:run(name)
 
     local jobs = self.jobs
     local old_job = jobs[name]
-    jobs[name] = nil
 
     if not old_job then
         return false, "timer not found"
     end
+
+    jobs[name] = nil
 
     if old_job:is_runnable() then
         return false, "running"
@@ -590,7 +601,8 @@ function _M:run(name)
 
     local name_or_false, err =
         create(self, old_job.name, old_job.callback,
-               old_job.delay, old_job:is_oneshot(), old_job.args)
+               old_job.delay, old_job:is_oneshot(),
+               old_job.argc, old_job.argv)
 
     local ok = name_or_false ~= false
 

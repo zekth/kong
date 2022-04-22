@@ -13,7 +13,6 @@ local ngx_ERR = ngx.ERR
 -- luacheck: pop
 
 local ngx_now = ngx.now
-local ngx_update_time = ngx.update_time
 
 local ipairs = ipairs
 local setmetatable = setmetatable
@@ -30,8 +29,7 @@ local meta_table = {
 
 
 -- calculate how long until the next timer expires
-function _M:update_closest()
-    local old_closest = self.closest
+function _M:get_closest()
     local delay = 0
     local lowest_wheel = self.lowest_wheel
     local resolution = self.resolution
@@ -48,7 +46,7 @@ function _M:update_closest()
         -- Scan only to the end point, not the whole wheel.
         -- why?
         -- Because there might be some jobs falling from the higher wheel
-        -- when the pointer of the `msec_wheel` spins to the starting point.
+        -- when the pointer of the `lowest_wheel` spins to the starting point.
         -- If the whole wheel is scanned
         -- and the result obtained is used as the sleep time of the super timer,
         -- some jobs of higher wheels may not be executed in time.
@@ -65,17 +63,12 @@ function _M:update_closest()
         end
     end
 
-    -- TODO: to calculate this value, a baseline is needed,
-    --  i.e. the time when the super timer was last woken up.
-    self.closest = delay
-
-    return delay < old_closest
+    return delay
 end
 
 
 -- do the following things
 -- * add all expired jobs from wheels to `wheels.ready_jobs`
--- * move some jobs from higher wheel to lower wheel
 function _M:fetch_all_expired_jobs()
     for _, _wheel in ipairs(self.wheels) do
         utils.table_merge(self.ready_jobs, _wheel:fetch_all_expired_jobs())
@@ -90,7 +83,22 @@ function _M:sync_time()
     -- perhaps some jobs have expired but not been fetched
     self:fetch_all_expired_jobs()
 
-    ngx_update_time()
+    -- This function will cause a system call
+    -- and is not called for performance reasons.
+    -- In theory, doing so would cause a potential bug.
+    -- For example:
+        -- timer:once(...)
+        -- performing time-consuming arithmetic operations
+        -- timer:once(...)
+    -- We know that the time cache of Nginx
+    -- is updated every time we sleep or yield.
+    -- But if this arithmetic operation takes a long time,
+    -- for example, three seconds,
+    -- then the time we obtained is not correct.
+    -- However, this practice is not recommended,
+    -- so it is not handled.
+    -- ngx.update_time()
+
     self.real_time = ngx_now()
 
     if utils.float_compare(self.real_time, self.expected_time) <= 0 then
@@ -132,8 +140,6 @@ function _M.new(wheel_setting, resolution)
 
         -- time of last update of wheel-group status
         expected_time = 0,
-
-        closest = 0,
 
         -- Why use two queues?
         -- Because a zero-delay timer may create another zero-delay timer,

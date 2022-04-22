@@ -105,7 +105,8 @@ function _M:insert(job)
         local _job = self:get_jobs_by_pointer(next_pointer)[job.name]
 
         if not _job
-           or (_job:is_cancelled() and not _job:is_enabled()) then
+           or (_job:is_cancelled() and not _job:is_enabled())
+        then
 
             self.slots[next_pointer][job.name] = job
 
@@ -158,12 +159,9 @@ function _M:spin_pointer(offset)
 
             if lower_wheel then
                 lower_wheel:insert(job)
-                goto continue
+            else
+                expired_jobs[name] = job
             end
-
-            expired_jobs[name] = job
-
-            ::continue::
         end
 
     end
@@ -197,6 +195,7 @@ function _M:fetch_all_expired_jobs()
     return ret
 end
 
+
 ---new a wheel
 ---@param id string id of this wheel
 ---@param nelts integer slots of this wheel
@@ -210,15 +209,19 @@ function _M.new(id, nelts)
         pointer = 1,
 
         nelts = nelts,
-        slots = utils.table_new(nelts, 0),
+        slots = {},
         higher_wheel = nil,
         lower_wheel = nil,
 
         expired_jobs = {},
     }
 
+    local meta_table_for_each_slot = {
+        __mode = "v",
+    }
+
     for i = 1, self.nelts do
-        self.slots[i] = setmetatable({ }, { __mode = "v" })
+        self.slots[i] = setmetatable({ }, meta_table_for_each_slot)
     end
 
     return setmetatable(self, meta_table)
