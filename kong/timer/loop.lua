@@ -1,18 +1,49 @@
+local utils = require("kong.timer.utils")
 local ngx_timer_at = ngx.timer.at
 local table_unpack = table.unpack
 
-
 local setmetatable = setmetatable
+local error = error
+
+local assert = utils.assert
 
 
-local _M = {}
+local _M = {
+    ACTION_CONTINUE = 1,
+    ACTION_ERROR = 2,
+    ACTION_EXIT = 3,
+}
 
 local meta_table = {
     __index = _M,
 }
 
 
+local function callback_wrapper(check_worker_exiting, callback, ...)
+    local action, err_or_nil = callback(...)
+
+    if action == _M.ACTION_CONTINUE or
+       action == _M.ACTION_EXIT
+    then
+        if check_worker_exiting and ngx.worker.exiting() then
+            return _M.ACTION_EXIT
+        end
+
+        return action
+    end
+
+    if action == _M.ACTION_ERROR then
+        assert(err_or_nil ~= nil)
+
+        return _M.ACTION_ERROR, err_or_nil
+    end
+
+    error("unexpected error")
+end
+
+
 local function nop()
+    return _M.ACTION_CONTINUE
 end
 
 
@@ -67,12 +98,15 @@ function _M.new(options)
         finally = nop,
     }
 
+    local check_worker_exiting = true
+    local do_not_check_worker_exiting = false
+
     if options.init then
         local callback = options.init.callback
         local argc = options.init.argc
         local argv = options.init.argv
         self.init = function ()
-            callback(table_unpack(argv, 1, argc))
+            return callback_wrapper(do_not_check_worker_exiting, callback, table_unpack(argv, 1, argc))
         end
     end
 
@@ -81,7 +115,7 @@ function _M.new(options)
         local argc = options.before.argc
         local argv = options.before.argv
         self.before = function ()
-            callback(table_unpack(argv, 1, argc))
+            return callback_wrapper(check_worker_exiting, callback, table_unpack(argv, 1, argc))
         end
     end
 
@@ -90,7 +124,7 @@ function _M.new(options)
         local argc = options.loop_body.argc
         local argv = options.loop_body.argv
         self.loop_body = function ()
-            callback(table_unpack(argv, 1, argc))
+            return callback_wrapper(check_worker_exiting, callback, table_unpack(argv, 1, argc))
         end
     end
 
@@ -99,7 +133,7 @@ function _M.new(options)
         local argc = options.after.argc
         local argv = options.after.argv
         self.after = function ()
-            callback(table_unpack(argv, 1, argc))
+            return callback_wrapper(do_not_check_worker_exiting, callback, table_unpack(argv, 1, argc))
         end
     end
 
@@ -108,7 +142,7 @@ function _M.new(options)
         local argc = options.finally.argc
         local argv = options.finally.argv
         self.finally = function ()
-            callback(table_unpack(argv, 1, argc))
+            return callback_wrapper(do_not_check_worker_exiting, callback, table_unpack(argv, 1, argc))
         end
     end
 

@@ -455,6 +455,8 @@ function _M.new(options)
                 ngx_update_time()
                 wheels.real_time = ngx_now()
                 wheels.expected_time = wheels.real_time - opt_resolution
+
+                return loop.ACTION_CONTINUE
             end
         },
 
@@ -470,6 +472,8 @@ function _M.new(options)
                         wake_up_mover_timer(timer_sys)
                     end
                 end
+
+                return loop.ACTION_CONTINUE
             end
         },
 
@@ -493,6 +497,8 @@ function _M.new(options)
                 else
                     ngx_sleep(constants.MIN_RESOLUTION)
                 end
+
+                return loop.ACTION_CONTINUE
             end,
         },
     })
@@ -508,6 +514,8 @@ function _M.new(options)
                 if not ok and err ~= "timeout" then
                     log_error("failed to wait on `semaphore_mover`: " .. err)
                 end
+
+                return loop.ACTION_CONTINUE
             end,
         },
 
@@ -523,7 +531,7 @@ function _M.new(options)
 
                 if not is_no_pending_jobs then
                     timer_sys.semaphore_worker:post(timer_sys.opt.threads)
-                    return
+                    return loop.ACTION_CONTINUE
                 end
 
                 if not is_no_ready_jobs then
@@ -535,6 +543,8 @@ function _M.new(options)
 
                     timer_sys.semaphore_worker:post(timer_sys.opt.threads)
                 end
+
+                return loop.ACTION_CONTINUE
             end,
         },
     })
@@ -575,6 +585,7 @@ function _M.new(options)
                     --         "failed to wait on `semaphore_worker` in thread #%d: %s",
                     --         thread_index, err))
                     -- end
+                    return loop.ACTION_CONTINUE
                 end,
             },
 
@@ -613,6 +624,8 @@ function _M.new(options)
                     if not utils.table_is_empty(timer_sys.wheels.ready_jobs) then
                         wake_up_mover_timer(timer_sys)
                     end
+
+                    return loop.ACTION_CONTINUE
                 end
             }
         })
