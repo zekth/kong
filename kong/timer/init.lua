@@ -4,20 +4,26 @@ local wheel_group = require("kong.timer.wheel.group")
 local constants = require("kong.timer.constants")
 local thread_group = require("kong.timer.thread.group")
 
-local ngx = ngx
+-- luacheck: push ignore
+local ngx_log = ngx.log
+local ngx_STDERR = ngx.STDERR
+local ngx_ALERT = ngx.ALERT
+local ngx_CRIT = ngx.CRIT
+local ngx_ERR = ngx.ERR
+local ngx_WARN = ngx.WARN
+local ngx_NOTICE = ngx.NOTICE
+local ngx_INFO = ngx.INFO
+local ngx_DEBUG = ngx.DEBUG
+-- luacheck: pop
+
+-- luacheck: push ignore
+local assert = utils.assert
+-- luacheck: pop
 
 local math_floor = math.floor
 local math_modf = math.modf
 
 local string_format = string.format
-
--- luacheck: push ignore
-local ngx_log = ngx.log
-local ngx_ERR = ngx.ERR
-local ngx_WARN = ngx.WARN
-local ngx_DEBUG = ngx.DEBUG
-local ngx_NOTICE = ngx.NOTICE
--- luacheck: pop
 
 local ngx_timer_at = ngx.timer.at
 local ngx_timer_every = ngx.timer.every
@@ -26,12 +32,8 @@ local ngx_update_time = ngx.update_time
 
 local pairs = pairs
 local ipairs = ipairs
-local tostring = tostring
 local type = type
-local next = next
 local select = select
-
-local assert = utils.assert
 
 local _M = {}
 
@@ -79,7 +81,6 @@ end
 
 function _M.new(options)
     local timer_sys = {}
-    local err
 
     if options then
         assert(type(options) == "table", "expected `options` to be a table")
@@ -254,7 +255,12 @@ function _M:once(name, callback, delay, ...)
         or (delay ~= 0 and delay < self.opt.resolution)
     then
 
-        ngx_log(ngx_NOTICE, "fallback to ngx.timer.at [delay = " .. delay .. "]")
+        local log = string_format(
+                        "fallback to ngx.timer.at [delay = %f]",
+                        delay)
+
+        ngx_log(ngx_NOTICE, log)
+
         local ok, err = ngx_timer_at(delay, callback, ...)
         return ok ~= nil, err
     end
@@ -278,8 +284,12 @@ function _M:every(name, callback, interval, ...)
     if interval >= self.max_expire
         or interval < self.opt.resolution then
 
-        ngx_log(ngx_NOTICE,"fallback to ngx.timer.every [interval = "
-            .. interval .. "]")
+        local log = string_format(
+                        "fallback to ngx.timer.every [interval = %f]",
+                        interval)
+
+        ngx_log(ngx_NOTICE, log)
+
         local ok, err = ngx_timer_every(interval, callback, ...)
         return ok ~= nil, err
     end

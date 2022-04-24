@@ -1,6 +1,23 @@
+local utils = require("kong.timer.utils")
 local super_thread_module = require("kong.timer.thread.super")
 local mover_thread_module = require("kong.timer.thread.mover")
 local worker_thread_module = require("kong.timer.thread.worker")
+
+-- luacheck: push ignore
+local ngx_log = ngx.log
+local ngx_STDERR = ngx.STDERR
+local ngx_ALERT = ngx.ALERT
+local ngx_CRIT = ngx.CRIT
+local ngx_ERR = ngx.ERR
+local ngx_WARN = ngx.WARN
+local ngx_NOTICE = ngx.NOTICE
+local ngx_INFO = ngx.INFO
+local ngx_DEBUG = ngx.DEBUG
+-- luacheck: pop
+
+-- luacheck: push ignore
+local assert = utils.assert
+-- luacheck: pop
 
 local setmetatable = setmetatable
 
@@ -43,7 +60,8 @@ end
 function _M.new(timer_sys)
     local super_thread = super_thread_module.new(timer_sys)
     local mover_thread = mover_thread_module.new(timer_sys)
-    local worker_thread = worker_thread_module.new(timer_sys, timer_sys.opt.threads)
+    local worker_thread = worker_thread_module.new(timer_sys,
+                                                   timer_sys.opt.threads)
 
     local self = {
         super_thread = super_thread,
