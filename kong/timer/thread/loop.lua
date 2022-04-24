@@ -3,6 +3,7 @@ local utils = require("kong.timer.utils")
 -- luacheck: push ignore
 local ngx_log = ngx.log
 local ngx_STDERR = ngx.STDERR
+local ngx_EMERG = ngx.EMERG
 local ngx_ALERT = ngx.ALERT
 local ngx_CRIT = ngx.CRIT
 local ngx_ERR = ngx.ERR
@@ -19,6 +20,8 @@ local assert = utils.assert
 local ngx_timer_at = ngx.timer.at
 local ngx_worker_exiting = ngx.worker.exiting
 
+local string_format = string.format
+
 local table_unpack = table.unpack
 
 local setmetatable = setmetatable
@@ -29,6 +32,36 @@ local _M = {
     ACTION_CONTINUE = 1,
     ACTION_ERROR = 2,
     ACTION_EXIT = 3,
+
+    LOG_FORMAT_SPAWN = "thread %s has been spawned",
+    LOG_FORMAT_ERROR_SPAWN =
+        "failed to spawn thread %s: %s",
+
+    LOG_FORMAT_START = "thread %s has been started",
+    LOG_FORMAT_EXIT = "thread %s has been exited",
+
+    LOG_FORMAT_ERROR_INIT =
+        "thread %s will exits after initializing: %s",
+    LOG_FORMAT_EXIT_INIT =
+        "thread %s will exits atfer initializing",
+
+    LOG_FORMAT_ERROR_BEFORE =
+        "thread %s will exits after the before_callback is executed: %s",
+    LOG_FORMAT_EXIT_BEFORE =
+        "thread %s will exits after the before_callback body is executed",
+
+    LOG_FORMAT_ERROR_LOOP_BODY =
+        "thread %s will exits after the loop body is executed: %s",
+    LOG_FORMAT_EXIT_LOOP_BODY =
+        "thread %s will exits after the loop body is executed",
+
+    LOG_FORMAT_ERROR_AFTER =
+        "thread %s will exits after the after_callback is executed: %s",
+    LOG_FORMAT_EXIT_AFTER =
+        "thread %s will exits after the after_callback body is executed",
+
+    LOG_FORMAT_ERROR_FINALLY =
+        "thread %s will exits after the finally_callback is executed: %s",
 }
 
 local meta_table = {
@@ -73,21 +106,101 @@ local function loop_wrapper(premature, self)
         return
     end
 
-    self.init()
+    local action, err
+
+    action, err = self.init()
+
+    if action == _M.ACTION_ERROR then
+        ngx_log(ngx_EMERG,
+                string_format(_M.LOG_FORMAT_ERROR_INIT,
+                    self.name, err))
+        return
+    end
+
+    if action == _M.ACTION_EXIT then
+        ngx_log(ngx_NOTICE,
+                string_format(
+                    _M.LOG_FORMAT_EXIT_INIT,
+                    self.name))
+        return
+    end
+
+    ngx_log(ngx_NOTICE,
+            string_format(_M.LOG_FORMAT_START,
+                          self.name))
 
     local before = self.before
     local loop_body = self.loop_body
     local after = self.after
 
     while not ngx_worker_exiting() and not self._kill do
-        before()
+        action, err = before()
 
-        loop_body()
+        if action == _M.ACTION_ERROR then
+            ngx_log(ngx_EMERG,
+                    string_format(_M.LOG_FORMAT_ERROR_BEFORE,
+                                  self.name, err))
+            break
+        end
 
-        after()
+        if action == _M.ACTION_EXIT then
+            ngx_log(ngx_NOTICE,
+                    string_format(_M.LOG_FORMAT_EXIT_BEFORE,
+                                  self.name))
+            break
+        end
+
+        assert(action == _M.ACTION_CONTINUE)
+
+        action, err = loop_body()
+
+        if action == _M.ACTION_ERROR then
+            ngx_log(ngx_EMERG,
+                    string_format(_M.LOG_FORMAT_ERROR_LOOP_BODY,
+                                  self.name, err))
+            break
+        end
+
+        if action == _M.ACTION_EXIT then
+            ngx_log(ngx_NOTICE,
+                    string_format(_M.LOG_FORMAT_EXIT_LOOP_BODY,
+                                  self.name))
+        end
+
+        assert(action == _M.ACTION_CONTINUE)
+
+        action, err = after()
+
+        if action == _M.ACTION_ERROR then
+            ngx_log(ngx_EMERG,
+                    string_format(_M.LOG_FORMAT_ERROR_AFTER,
+                                  self.name, err))
+            break
+        end
+
+        if action == _M.ACTION_EXIT then
+            ngx_log(ngx_NOTICE,
+                    string_format(_M.LOG_FORMAT_EXIT_AFTER,
+                                  self.name))
+            break
+        end
+
+        assert(action == _M.ACTION_CONTINUE)
     end
 
-    self.finally()
+    action, err = self.finally()
+
+    assert(action ~= _M.ACTION_EXIT)
+
+    if action == _M.ACTION_ERROR then
+        ngx_log(ngx_EMERG,
+                string_format(_M.LOG_FORMAT_ERROR_AFTER,
+                              self.name, err))
+    end
+
+    ngx_log(ngx_NOTICE,
+            string_format(_M.LOG_FORMAT_EXIT,
+                          self.name))
 end
 
 
@@ -104,7 +217,19 @@ end
 
 function _M:spawn()
     self._kill = false
-    ngx_timer_at(0, loop_wrapper, self)
+    local ok, err = ngx_timer_at(0, loop_wrapper, self)
+
+    if not ok then
+        err = string_format(_M.LOG_FORMAT_ERROR_SPAWN,
+                            self.name, err)
+        ngx_log(ngx_EMERG, err)
+        return false, err
+    end
+
+    ngx_log(ngx_NOTICE,
+            string_format(_M.LOG_FORMAT_SPAWN,
+                          self.name))
+    return true, nil
 end
 
 
@@ -113,8 +238,9 @@ function _M:kill()
 end
 
 
-function _M.new(options)
+function _M.new(name, options)
     local self = {
+        name = tostring(name),
         _kill = false,
         init = nop,
         before = nop,

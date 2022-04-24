@@ -6,6 +6,7 @@ local constants = require("kong.timer.constants")
 -- luacheck: push ignore
 local ngx_log = ngx.log
 local ngx_STDERR = ngx.STDERR
+local ngx_EMERG = ngx.EMERG
 local ngx_ALERT = ngx.ALERT
 local ngx_CRIT = ngx.CRIT
 local ngx_ERR = ngx.ERR
@@ -79,6 +80,13 @@ local function thread_after(self)
                        constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
 
     local ok, err = self.wake_up_semaphore:wait(closest)
+
+    if not ok and err ~= "timeout" then
+        ngx_log(ngx_ERR,
+                "failed to wait semaphore: "
+             .. err)
+    end
+
     return loop.ACTION_CONTINUE
 end
 
@@ -114,7 +122,7 @@ function _M.new(timer_sys)
         wake_up_semaphore = semaphore.new(0),
     }
 
-    self.thread = loop.new({
+    self.thread = loop.new("super", {
         init = {
             argc = 1,
             argv = {

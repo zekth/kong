@@ -7,6 +7,7 @@ local thread_group = require("kong.timer.thread.group")
 -- luacheck: push ignore
 local ngx_log = ngx.log
 local ngx_STDERR = ngx.STDERR
+local ngx_EMERG = ngx.EMERG
 local ngx_ALERT = ngx.ALERT
 local ngx_CRIT = ngx.CRIT
 local ngx_ERR = ngx.ERR
