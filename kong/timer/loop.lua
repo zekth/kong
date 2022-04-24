@@ -1,4 +1,5 @@
 local ngx_timer_at = ngx.timer.at
+local table_unpack = table.unpack
 
 
 local setmetatable = setmetatable
@@ -11,24 +12,28 @@ local meta_table = {
 }
 
 
+local function nop()
+end
+
+
 local function loop_wrapper(premature, self)
     if premature then
         return
     end
 
-    if self.init then
-        local init = self.init
-        init.callback(table.unpack(init.argv, 1, init.argc))
-    end
+    self.init()
 
+    local before = self.before
     local loop_body = self.loop_body
-    local loop_body_callback = loop_body.callback
-    local loop_body_argc = loop_body.argc
-    local loop_body_argv = loop_body.argv
+    local after = self.after
 
     while not ngx.worker.exiting() and not self._kill do
-        loop_body_callback(table.unpack(loop_body_argv, 1, loop_body_argc))
+        before()
+        loop_body()
+        after()
     end
+
+    self.finally()
 end
 
 
@@ -44,23 +49,57 @@ end
 
 function _M.new(options)
     local self = {
-        _kill = false
+        _kill = false,
+        init = nop,
+        before = nop,
+        loop_body = nop,
+        after = nop,
+        finally = nop,
     }
 
     if options.init then
-        self.init = {
-            callback = options.init.callback,
-            argc = options.init.argc,
-            argv = options.init.argv,
-        }
+        local callback = options.init.callback
+        local argc = options.init.argc
+        local argv = options.init.argv
+        self.init = function ()
+            callback(table_unpack(argv, 1, argc))
+        end
+    end
+
+    if options.before then
+        local callback = options.before.callback
+        local argc = options.before.argc
+        local argv = options.before.argv
+        self.before = function ()
+            callback(table_unpack(argv, 1, argc))
+        end
     end
 
     if options.loop_body then
-        self.loop_body = {
-            callback = options.loop_body.callback,
-            argc = options.loop_body.argc,
-            argv = options.loop_body.argv
-        }
+        local callback = options.loop_body.callback
+        local argc = options.loop_body.argc
+        local argv = options.loop_body.argv
+        self.loop_body = function ()
+            callback(table_unpack(argv, 1, argc))
+        end
+    end
+
+    if options.after then
+        local callback = options.after.callback
+        local argc = options.after.argc
+        local argv = options.after.argv
+        self.after = function ()
+            callback(table_unpack(argv, 1, argc))
+        end
+    end
+
+    if options.finally then
+        local callback = options.finally.callback
+        local argc = options.finally.argc
+        local argv = options.finally.argv
+        self.finally = function ()
+            callback(table_unpack(argv, 1, argc))
+        end
     end
 
     return setmetatable(self, meta_table)
