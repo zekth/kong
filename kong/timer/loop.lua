@@ -29,7 +29,17 @@ local function loop_wrapper(premature, self)
 
     while not ngx.worker.exiting() and not self._kill do
         before()
+
+        if ngx.worker.exiting() then
+            break
+        end
+
         loop_body()
+
+        if ngx.worker.exiting() then
+            break
+        end
+
         after()
     end
 

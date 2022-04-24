@@ -465,32 +465,40 @@ function _M.new(options)
                 if timer_sys.enable then
                     -- update the status of the wheel group
                     timer_sys.wheels:sync_time()
-        
+
                     if not utils.table_is_empty(timer_sys.wheels.ready_jobs) then
                         wake_up_mover_timer(timer_sys)
                     end
-        
+                end
+            end
+        },
+
+        after = {
+            argc = 0,
+            argv = {},
+            callback = function()
+                if timer_sys.enable then
                     local closest = timer_sys.wheels:get_closest()
-        
+
                     closest = math_max(closest, timer_sys.opt.resolution)
                     closest = math_min(closest,
                                        constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
-        
+
                     local ok, err = timer_sys.semaphore_super:wait(closest)
-        
+
                     if not ok and err ~= "timeout" then
                         log_error("failed to wait on `semaphore_super`: " .. err)
                     end
-        
+
                 else
                     ngx_sleep(constants.MIN_RESOLUTION)
                 end
-            end
-        }
+            end,
+        },
     })
 
     timer_sys.mover_thread = loop.new({
-        loop_body = {
+        before = {
             argc = 0,
             argv = {},
             callback = function ()
@@ -500,7 +508,13 @@ function _M.new(options)
                 if not ok and err ~= "timeout" then
                     log_error("failed to wait on `semaphore_mover`: " .. err)
                 end
+            end,
+        },
 
+        loop_body = {
+            argc = 0,
+            argv = {},
+            callback = function ()
                 local is_no_pending_jobs =
                     utils.table_is_empty(timer_sys.wheels.pending_jobs)
 
@@ -521,8 +535,8 @@ function _M.new(options)
 
                     timer_sys.semaphore_worker:post(timer_sys.opt.threads)
                 end
-            end
-        }
+            end,
+        },
     })
 
     timer_sys.worker_threads = {}
@@ -549,7 +563,7 @@ function _M.new(options)
 
     for i = 1, timer_sys.opt.threads do
         timer_sys.worker_threads[i] = loop.new({
-            loop_body = {
+            before = {
                 argc = 0,
                 argv = {},
                 callback = function ()
@@ -561,7 +575,13 @@ function _M.new(options)
                     --         "failed to wait on `semaphore_worker` in thread #%d: %s",
                     --         thread_index, err))
                     -- end
+                end,
+            },
 
+            loop_body = {
+                argc = 0,
+                argv = {},
+                callback = function ()
                     while not utils.table_is_empty(timer_sys.wheels.pending_jobs) and not ngx.worker.exiting() do
                         -- thread.counter.runs = thread.counter.runs + 1
 
