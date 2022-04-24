@@ -1,11 +1,8 @@
-local semaphore = require("ngx.semaphore")
 local job_module = require("kong.timer.job")
-local super_thread_module = require("kong.timer.thread.super")
-local mover_thread_module = require("kong.timer.thread.mover")
-local worker_thread_module = require("kong.timer.thread.worker")
 local utils = require("kong.timer.utils")
 local wheel_group = require("kong.timer.wheel.group")
 local constants = require("kong.timer.constants")
+local thread_group = require("kong.timer.thread.group")
 
 local ngx = ngx
 
@@ -39,47 +36,6 @@ local assert = utils.assert
 local _M = {}
 
 
-local function init_all_threads(self)
-    local super_thread = super_thread_module.new(self)
-    local mover_thread = mover_thread_module.new(self)
-    local worker_thread = worker_thread_module.new(self, self.opt.threads)
-
-    super_thread:set_wake_up_mover_thread_callback(function ()
-        mover_thread:wake_up()
-    end)
-
-    mover_thread:set_wake_up_worker_thread_callback(function ()
-        worker_thread:wake_up()
-    end)
-
-    worker_thread:set_wake_up_super_thread_callback(function ()
-        super_thread:wake_up()
-    end)
-
-    worker_thread:set_wake_up_mover_thread_callback(function ()
-        mover_thread:wake_up()
-    end)
-
-    self.super_thread = super_thread
-    self.mover_thread = mover_thread
-    self.worker_thread = worker_thread
-end
-
-
-local function spawn_all_threads(self)
-    self.super_thread:spawn()
-    self.mover_thread:spawn()
-    self.worker_thread:spawn()
-end
-
-
-local function kill_all_threads(self)
-    self.super_thread:kill()
-    self.mover_thread:kill()
-    self.worker_thread:kill()
-end
-
-
 local function create(self, name, callback, delay, once, argc, argv)
     local wheels = self.wheels
     local jobs = self.jobs
@@ -104,14 +60,14 @@ local function create(self, name, callback, delay, once, argc, argv)
 
     if job:is_immediate() then
         wheels.ready_jobs[name] = job
-        self.mover_thread:wake_up()
+        self.thread_group:woke_up_mover_thread()
 
         return true, nil
     end
 
     local ok, err = wheels:insert_job(job)
 
-    self.super_thread:wake_up()
+    self.thread_group:wake_up_super_thread()
 
     if ok then
         return name, nil
@@ -247,7 +203,7 @@ function _M.new(options)
     -- enable/diable entire timing system
     timer_sys.enable = false
 
-    init_all_threads(timer_sys)
+    timer_sys.thread_group = thread_group.new(timer_sys)
 
     timer_sys.jobs = {}
 
@@ -261,7 +217,7 @@ end
 
 function _M:start()
     if self.is_first_start then
-        spawn_all_threads(self)
+        self.thread_group:spawn()
         self.is_first_start = false
     end
 
@@ -283,9 +239,8 @@ end
 
 -- TODO: rename this method
 function _M:destroy()
-    kill_all_threads(self)
+    self.thread_group:kill()
 end
-
 
 
 function _M:once(name, callback, delay, ...)

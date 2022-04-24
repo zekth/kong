@@ -71,6 +71,7 @@ build = {
     ["kong.timer.thread.super"] = "kong/timer/thread/super.lua",
     ["kong.timer.thread.mover"] = "kong/timer/thread/mover.lua",
     ["kong.timer.thread.worker"] = "kong/timer/thread/worker.lua",
+    ["kong.timer.thread.group"] = "kong/timer/thread/group.lua",
 
     ["kong.conf_loader"] = "kong/conf_loader/init.lua",
     ["kong.conf_loader.listeners"] = "kong/conf_loader/listeners.lua",
