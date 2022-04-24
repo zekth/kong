@@ -68,6 +68,9 @@ build = {
     ["kong.timer.wheel"] = "kong/timer/wheel/init.lua",
     ["kong.timer.wheel.group"] = "kong/timer/wheel/group.lua",
     ["kong.timer.loop"] = "kong/timer/loop.lua",
+    ["kong.timer.thread.super"] = "kong/timer/thread/super.lua",
+    ["kong.timer.thread.mover"] = "kong/timer/thread/mover.lua",
+    ["kong.timer.thread.worker"] = "kong/timer/thread/worker.lua",
 
     ["kong.conf_loader"] = "kong/conf_loader/init.lua",
     ["kong.conf_loader.listeners"] = "kong/conf_loader/listeners.lua",
