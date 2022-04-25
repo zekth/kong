@@ -43,7 +43,8 @@ end
 
 local function thread_before(context, self)
     local wake_up_semaphore = self.wake_up_semaphore
-    local ok, err = wake_up_semaphore:wait(constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
+    local ok, err =
+        wake_up_semaphore:wait(constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
 
     if not ok and err ~= "timeout" then
         ngx_log(ngx_ERR,
