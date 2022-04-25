@@ -14,6 +14,7 @@ local utils = require "kong.tools.utils"
 local ws_id = utils.uuid()
 
 local helpers = require "spec.helpers.dns"
+local wait_until = require("spec.helpers").wait_until
 local gettime = helpers.gettime
 local sleep = helpers.sleep
 local dnsSRV = function(...) return helpers.dnsSRV(client, ...) end
@@ -845,16 +846,22 @@ describe("[consistent_hashing]", function()
       record.expired = true
       -- do a lookup to trigger the async lookup
       client.resolve("really.really.really.does.not.exist.host.test", {qtype = client.TYPE_A})
-      sleep(1) -- provide time for async lookup to complete
 
-      --b:_hit_all() -- hit them all to force renewal
-      targets.resolve_targets(b.targets)
+      wait_until(function ()
+        --b:_hit_all() -- hit them all to force renewal
+        targets.resolve_targets(b.targets)
 
-      count = count_indices(b)
-      assert.same({
-        --["1.2.3.4:80"] = 0,  --> failed to resolve, no more entries
-        ["[::1]:80"]   = 320,
-      }, count)
+        count = count_indices(b)
+
+        local ok = pcall(function ()
+          assert.same({
+            --["1.2.3.4:80"] = 0,  --> failed to resolve, no more entries
+            ["[::1]:80"]   = 320,
+          }, count)
+        end)
+
+        return ok
+      end)
 
       -- update the failed record
       add_target(b, "really.really.really.does.not.exist.host.test", 80, 20)
