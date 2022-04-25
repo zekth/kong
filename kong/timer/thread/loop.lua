@@ -26,12 +26,15 @@ local table_unpack = table.unpack
 
 local setmetatable = setmetatable
 local error = error
+local pcall = pcall
 
 
 local _M = {
     ACTION_CONTINUE = 1,
     ACTION_ERROR = 2,
     ACTION_EXIT = 3,
+    ACTION_EXIT_WITH_MSG = 4,
+    ACTION_RESTART = 5,
 
     LOG_FORMAT_SPAWN = "thread %s has been spawned",
     LOG_FORMAT_ERROR_SPAWN =
@@ -44,24 +47,42 @@ local _M = {
         "thread %s will exits after initializing: %s",
     LOG_FORMAT_EXIT_INIT =
         "thread %s will exits atfer initializing",
+    LOG_FORMAT_EXIT_WITH_MSG_INIT =
+        "thread %s will exits atfer initializing: %s",
+    LOG_FORMAT_RESTART_INIT =
+        "thread %s will be restarted after initializing",
 
     LOG_FORMAT_ERROR_BEFORE =
         "thread %s will exits after the before_callback is executed: %s",
     LOG_FORMAT_EXIT_BEFORE =
         "thread %s will exits after the before_callback body is executed",
+    LOG_FORMAT_EXIT_WITH_MSG_BEFORE =
+        "thread %s will exits after the before_callback body is executed: %s",
+    LOG_FORMAT_RESTART_BEFORE =
+        "thread %s will be restarted after the before_callback body is executed",
 
     LOG_FORMAT_ERROR_LOOP_BODY =
         "thread %s will exits after the loop body is executed: %s",
     LOG_FORMAT_EXIT_LOOP_BODY =
         "thread %s will exits after the loop body is executed",
+    LOG_FORMAT_EXIT_WITH_MSG_LOOP_BODY =
+        "thread %s will exits after the loop body is executed: %s",
+    LOG_FORMAT_RESTART_LOOP_BODY =
+        "thread %s will be restarted after the loop body is executed",
 
     LOG_FORMAT_ERROR_AFTER =
         "thread %s will exits after the after_callback is executed: %s",
     LOG_FORMAT_EXIT_AFTER =
         "thread %s will exits after the after_callback body is executed",
+    LOG_FORMAT_EXIT_WITH_MSG_AFTER =
+        "thread %s will exits after the after_callback body is executed: %s",
+    LOG_FORMAT_RESTART_AFTER =
+        "thread %s will be restarted after the after_callback body is executed",
 
     LOG_FORMAT_ERROR_FINALLY =
         "thread %s will exits after the finally_callback is executed: %s",
+    LOG_FORMAT_RESTART_FINALLY =
+        "thread %s will be restarted after the finally_callback body is executed",
 }
 
 local meta_table = {
@@ -70,26 +91,40 @@ local meta_table = {
 
 
 local function callback_wrapper(self, check_worker_exiting, callback, ...)
-    local action, err_or_nil = callback(...)
+    local ok, action_or_err, err_or_nil = pcall(callback, self.context, ...)
+
+    if not ok then
+        return _M.ACTION_ERROR, action_or_err
+    end
+
+    local action = action_or_err
+    local err = err_or_nil
 
     if action == _M.ACTION_CONTINUE or
-       action == _M.ACTION_EXIT
+       action == _M.ACTION_RESTART
     then
         if check_worker_exiting and ngx_worker_exiting() then
-            return _M.ACTION_EXIT
+            return _M.ACTION_EXIT_WITH_MSG, "worker exiting"
         end
 
         if self._kill then
-            return _M.ACTION_EXIT
+            return _M.ACTION_EXIT_WITH_MSG, "killed"
         end
 
         return action
     end
 
-    if action == _M.ACTION_ERROR then
-        assert(err_or_nil ~= nil)
+    if action == _M.ACTION_EXIT then
+        return action
+    end
 
-        return _M.ACTION_ERROR, err_or_nil
+    if action == _M.ACTION_EXIT_WITH_MSG then
+        return action, err
+    end
+
+    if action == _M.ACTION_ERROR then
+        assert(err ~= nil)
+        return _M.ACTION_ERROR, err
     end
 
     error("unexpected error")
@@ -106,7 +141,14 @@ local function loop_wrapper(premature, self)
         return
     end
 
+    ngx_log(ngx_NOTICE,
+            string_format(_M.LOG_FORMAT_START,
+                          self.name))
+
     local action, err
+    local before = self.before
+    local loop_body = self.loop_body
+    local after = self.after
 
     action, err = self.init()
 
@@ -114,7 +156,7 @@ local function loop_wrapper(premature, self)
         ngx_log(ngx_EMERG,
                 string_format(_M.LOG_FORMAT_ERROR_INIT,
                     self.name, err))
-        return
+        goto finally
     end
 
     if action == _M.ACTION_EXIT then
@@ -122,19 +164,32 @@ local function loop_wrapper(premature, self)
                 string_format(
                     _M.LOG_FORMAT_EXIT_INIT,
                     self.name))
-        return
+        goto finally
     end
 
-    ngx_log(ngx_NOTICE,
-            string_format(_M.LOG_FORMAT_START,
-                          self.name))
+    if action == _M.ACTION_EXIT_WITH_MSG then
+        ngx_log(ngx_NOTICE,
+                string_format(
+                    _M.LOG_FORMAT_EXIT_WITH_MSG_INIT,
+                    self.name, err))
+        goto finally
+    end
 
-    local before = self.before
-    local loop_body = self.loop_body
-    local after = self.after
+    if action == _M.ACTION_RESTART then
+        ngx_log(ngx_NOTICE,
+                string_format(
+                    _M.LOG_FORMAT_RESTART_INIT,
+                    self.name
+                ))
+        self:spawn()
+        goto finally
+    end
+
+    assert(action == _M.ACTION_CONTINUE)
 
     while not ngx_worker_exiting() and not self._kill do
         action, err = before()
+        -- ngx_log(ngx_ERR, "CCCCCCCC-", action)
 
         if action == _M.ACTION_ERROR then
             ngx_log(ngx_EMERG,
@@ -147,6 +202,24 @@ local function loop_wrapper(premature, self)
             ngx_log(ngx_NOTICE,
                     string_format(_M.LOG_FORMAT_EXIT_BEFORE,
                                   self.name))
+            break
+        end
+
+        if action == _M.ACTION_EXIT_WITH_MSG then
+            ngx_log(ngx_NOTICE,
+                    string_format(
+                        _M.LOG_FORMAT_EXIT_WITH_MSG_BEFORE,
+                        self.name, err))
+            break
+        end
+
+        if action == _M.ACTION_RESTART then
+            ngx_log(ngx_NOTICE,
+                    string_format(
+                        _M.LOG_FORMAT_RESTART_BEFORE,
+                        self.name
+                    ))
+            self:spawn()
             break
         end
 
@@ -167,6 +240,24 @@ local function loop_wrapper(premature, self)
                                   self.name))
         end
 
+        if action == _M.ACTION_EXIT_WITH_MSG then
+            ngx_log(ngx_NOTICE,
+                    string_format(
+                        _M.LOG_FORMAT_EXIT_WITH_MSG_LOOP_BODY,
+                        self.name, err))
+            break
+        end
+
+        if action == _M.ACTION_RESTART then
+            ngx_log(ngx_NOTICE,
+                    string_format(
+                        _M.LOG_FORMAT_RESTART_LOOP_BODY,
+                        self.name
+                    ))
+            self:spawn()
+            break
+        end
+
         assert(action == _M.ACTION_CONTINUE)
 
         action, err = after()
@@ -185,17 +276,44 @@ local function loop_wrapper(premature, self)
             break
         end
 
+        if action == _M.ACTION_EXIT_WITH_MSG then
+            ngx_log(ngx_NOTICE,
+                    string_format(
+                        _M.LOG_FORMAT_EXIT_WITH_MSG_AFTER,
+                        self.name, err))
+            break
+        end
+
+        if action == _M.ACTION_RESTART then
+            ngx_log(ngx_NOTICE,
+                    string_format(
+                        _M.LOG_FORMAT_RESTART_AFTER,
+                        self.name
+                    ))
+            self:spawn()
+            break
+        end
+
         assert(action == _M.ACTION_CONTINUE)
     end
 
-    action, err = self.finally()
+    ::finally::
 
-    assert(action ~= _M.ACTION_EXIT)
+    action, err = self.finally()
 
     if action == _M.ACTION_ERROR then
         ngx_log(ngx_EMERG,
-                string_format(_M.LOG_FORMAT_ERROR_AFTER,
+                string_format(_M.LOG_FORMAT_ERROR_FINALLY,
                               self.name, err))
+    end
+
+    if action == _M.ACTION_RESTART then
+        ngx_log(ngx_NOTICE,
+                string_format(
+                    _M.LOG_FORMAT_RESTART_FINALLY,
+                    self.name
+                ))
+        self:spawn()
     end
 
     ngx_log(ngx_NOTICE,
@@ -241,6 +359,7 @@ end
 function _M.new(name, options)
     local self = {
         name = tostring(name),
+        context = {},
         _kill = false,
         init = nop,
         before = nop,

@@ -30,14 +30,16 @@ local math_min = math.min
 
 local setmetatable = setmetatable
 
-local _M = {}
+local _M = {
+    RESTART_THREAD_AFTER_RUNS = 10 ^ 5,
+}
 
 local meta_table = {
     __index = _M,
 }
 
 
-local function thread_init(self)
+local function thread_init(context, self)
     local timer_sys = self.timer_sys
     local wheels = timer_sys.wheels
     local opt_resolution = timer_sys.opt.resolution
@@ -48,11 +50,15 @@ local function thread_init(self)
     wheels.real_time = ngx_now()
     wheels.expected_time = wheels.real_time - opt_resolution
 
+    context.counter = {
+        runs = 0,
+    }
+
     return loop.ACTION_CONTINUE
 end
 
 
-local function thread_body(self)
+local function thread_body(context, self)
     local timer_sys = self.timer_sys
     local wheels = timer_sys.wheels
 
@@ -69,9 +75,13 @@ local function thread_body(self)
 end
 
 
-local function thread_after(self)
+local function thread_after(context, self)
     local timer_sys = self.timer_sys
     local wheels = timer_sys.wheels
+    local counter = context.counter
+    local runs = counter.runs + 1
+
+    counter.runs = runs
 
     local closest = wheels:get_closest()
 
@@ -87,6 +97,16 @@ local function thread_after(self)
              .. err)
     end
 
+    if runs > _M.RESTART_THREAD_AFTER_RUNS then
+        return loop.ACTION_RESTART
+    end
+
+    return loop.ACTION_CONTINUE
+end
+
+
+local function thread_finally(context)
+    context.counter.runs = 0
     return loop.ACTION_CONTINUE
 end
 
@@ -146,6 +166,12 @@ function _M.new(timer_sys)
             },
             callback = thread_after,
         },
+
+        finally = {
+            argc = 0,
+            argv = {},
+            callback = thread_finally,
+        }
     })
 
     return setmetatable(self, meta_table)

@@ -33,7 +33,15 @@ local meta_table = {
 }
 
 
-local function thread_before(self)
+local function thread_init(context)
+    context.counter = {
+        runs = 0,
+    }
+    return loop.ACTION_CONTINUE
+end
+
+
+local function thread_before(context, self)
     local wake_up_semaphore = self.wake_up_semaphore
     local ok, err = wake_up_semaphore:wait(constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
 
@@ -47,7 +55,7 @@ local function thread_before(self)
 end
 
 
-local function thread_body(self)
+local function thread_body(context, self)
     local timer_sys = self.timer_sys
     local wheels = timer_sys.wheels
     local jobs = timer_sys.jobs
@@ -84,6 +92,26 @@ local function thread_body(self)
         self.wake_up_mover_thread()
     end
 
+    return loop.ACTION_CONTINUE
+end
+
+
+local function thread_after(context, restart_thread_after_runs)
+    local counter = context.counter
+    local runs = counter.runs + 1
+
+    counter.runs = runs
+
+    if runs > restart_thread_after_runs then
+        return loop.ACTION_RESTART
+    end
+
+    return loop.ACTION_CONTINUE
+end
+
+
+local function thread_finally(context)
+    context.counter.runs = 0
     return loop.ACTION_CONTINUE
 end
 
@@ -130,6 +158,12 @@ function _M.new(timer_sys, threads)
     for i = 1, threads do
         local name = string_format("worker#%d", i)
         self.threads[i] = loop.new(name, {
+            init = {
+                argc = 0,
+                argv = {},
+                callback = thread_init,
+            },
+
             before = {
                 argc = 1,
                 argv = {
@@ -144,6 +178,20 @@ function _M.new(timer_sys, threads)
                     self,
                 },
                 callback = thread_body,
+            },
+
+            after = {
+                argc = 1,
+                argv = {
+                    timer_sys.opt.restart_thread_after_runs,
+                },
+                callback = thread_after,
+            },
+
+            finally = {
+                argc = 0,
+                argv = {},
+                callback = thread_finally,
             },
         })
     end

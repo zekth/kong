@@ -24,14 +24,24 @@ local math_abs = math.abs
 
 local setmetatable = setmetatable
 
-local _M = {}
+local _M = {
+    RESTART_THREAD_AFTER_RUNS = 10 ^ 5,
+}
 
 local meta_table = {
     __index = _M,
 }
 
 
-local function thread_before(self)
+local function thread_init(context)
+    context.counter = {
+        runs = 0
+    }
+    return loop.ACTION_CONTINUE
+end
+
+
+local function thread_before(context, self)
     local wake_up_semaphore = self.wake_up_semaphore
     local ok, err = wake_up_semaphore:wait(constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
 
@@ -45,7 +55,7 @@ local function thread_before(self)
 end
 
 
-local function thread_body(self)
+local function thread_body(context, self)
     local timer_sys = self.timer_sys
     local wheels = timer_sys.wheels
 
@@ -69,6 +79,26 @@ local function thread_body(self)
         self.wake_up_worker_thread()
     end
 
+    return loop.ACTION_CONTINUE
+end
+
+
+local function thread_after(context)
+    local counter = context.counter
+    local runs = counter.runs + 1
+
+    counter.runs = runs
+
+    if runs > _M.RESTART_THREAD_AFTER_RUNS then
+        return loop.ACTION_RESTART
+    end
+
+    return loop.ACTION_CONTINUE
+end
+
+
+local function thread_finally(context)
+    context.counter.runs = 0
     return loop.ACTION_CONTINUE
 end
 
@@ -105,6 +135,12 @@ function _M.new(timer_sys)
     }
 
     self.thread = loop.new("mover", {
+        init = {
+            argc = 0,
+            argv = {},
+            callback = thread_init,
+        },
+
         before = {
             argc = 1,
             argv = {
@@ -120,6 +156,18 @@ function _M.new(timer_sys)
             },
             callback = thread_body,
         },
+
+        after = {
+            argc = 0,
+            argv = {},
+            callback = thread_after,
+        },
+
+        finally = {
+            argc = 0,
+            argv = {},
+            callback = thread_finally,
+        }
     })
 
     return setmetatable(self, meta_table)
