@@ -219,7 +219,12 @@ end
 
 function _M:start()
     if self.is_first_start then
-        self.thread_group:spawn()
+        local ok, err = self.thread_group:spawn()
+
+        if not ok then
+            return false, "failed to spawn threads: " .. err
+        end
+
         self.is_first_start = false
     end
 

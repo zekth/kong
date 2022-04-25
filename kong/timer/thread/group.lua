@@ -45,9 +45,30 @@ end
 
 
 function _M:spawn()
-    self.super_thread:spawn()
-    self.mover_thread:spawn()
-    self.worker_thread:spawn()
+    local ok, err
+    ok, err = self.super_thread:spawn()
+
+    if not ok then
+        return false, err
+    end
+
+    ok, err = self.mover_thread:spawn()
+
+    if not ok then
+        self.super_thread:kill()
+        return false, err
+    end
+
+    ok, err = self.worker_thread:spawn()
+
+    if not ok then
+        self.super_thread:kill()
+        self.mover_thread:kill()
+        self.worker_thread:kill()
+        return false, err
+    end
+
+    return true, nil
 end
 
 

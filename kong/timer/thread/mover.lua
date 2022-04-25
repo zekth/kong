@@ -125,7 +125,7 @@ end
 
 
 function _M:spawn()
-    self.thread:spawn()
+    return self.thread:spawn()
 end
 
 

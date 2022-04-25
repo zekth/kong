@@ -142,10 +142,17 @@ end
 
 
 function _M:spawn()
+    local ok, err
     local threads = self.threads
     for i = 1, #threads do
-        threads[i]:spawn()
+        ok, err = threads[i]:spawn()
+
+        if not ok then
+            return false, err
+        end
     end
+
+    return true, nil
 end
 
 
