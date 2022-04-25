@@ -90,7 +90,7 @@ function _M:sync_time()
     -- perhaps some jobs have expired but not been fetched
     self:fetch_all_expired_jobs()
 
-    ngx_update_time()
+    -- ngx_update_time()
     self.real_time = ngx_now()
 
     if utils.float_compare(self.real_time, self.expected_time) <= 0 then
