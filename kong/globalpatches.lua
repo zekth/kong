@@ -82,11 +82,11 @@ return function(options)
     end
 
     _G.ngx.timer.at = function(delay, callback, ...)
-      return timer_sys:once(nil, callback, delay, ...)
+      return timer_sys:once(nil, delay, callback, ...)
     end
 
     _G.ngx.timer.every = function(interval, callback, ...)
-      return timer_sys:every(nil, callback, interval, ...)
+      return timer_sys:every(nil, interval, callback, ...)
     end
 
     _G.hack_timer_sys_start = function ()
