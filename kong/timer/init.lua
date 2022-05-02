@@ -21,6 +21,9 @@ local ngx_DEBUG = ngx.DEBUG
 local assert = utils.assert
 -- luacheck: pop
 
+local utils_float_compare = utils.float_compare
+local utils_table_deepcopy = utils.table_deepcopy
+
 local math_floor = math.floor
 local math_modf = math.modf
 
@@ -86,7 +89,11 @@ local function create(self, name, callback, delay, timer_type, argc, argv)
 
     local ok, err = wheels:insert_job(job)
 
-    self.thread_group:wake_up_super_thread()
+    local _, need_wake_up = wheels:update_earliest_expiry_time()
+
+    if need_wake_up then
+        self.thread_group:wake_up_super_thread()
+    end
 
     if ok then
         return name, nil
@@ -130,7 +137,7 @@ function _M.new(options)
             assert(type(options.resolution) == "number",
                 "expected `resolution` to be a number")
 
-            assert(utils.float_compare(options.resolution, 0.1) >= 0,
+            assert(utils_float_compare(options.resolution, 0.1) >= 0,
             "expected `resolution` to be greater than or equal to 0.1")
         end
 
@@ -284,13 +291,12 @@ function _M:once(name, delay, callback, ...)
     then
 
         local log = string_format(
-                        "fallback to ngx.timer.at [delay = %f]",
+                        "[timer] fallback to ngx.timer.at [delay = %f]",
                         delay)
 
         ngx_log(ngx_NOTICE, log)
 
-        local ok, err = ngx_timer_at(delay, callback, ...)
-        return ok ~= nil, err
+        return ngx_timer_at(delay, callback, ...)
     end
 
     -- TODO: desc the logic and add related tests
@@ -313,13 +319,12 @@ function _M:every(name, interval, callback, ...)
         or interval < self.opt.resolution then
 
         local log = string_format(
-                        "fallback to ngx.timer.every [interval = %f]",
+                        "[timer] fallback to ngx.timer.every [interval = %f]",
                         interval)
 
         ngx_log(ngx_NOTICE, log)
 
-        local ok, err = ngx_timer_every(interval, callback, ...)
-        return ok ~= nil, err
+        return ngx_timer_every(interval, callback, ...)
     end
 
     local name_or_false, err =
@@ -393,6 +398,11 @@ function _M:cancel(name)
 end
 
 
+function _M:is_managed(name)
+    return self.jobs[name] ~= nil
+end
+
+
 function _M:stats()
     local pending_jobs = self.wheels.pending_jobs
     local ready_jobs = self.wheels.ready_jobs
@@ -400,9 +410,9 @@ function _M:stats()
     local sys = {
         running = self.counter.running,
         pending = #pending_jobs + #ready_jobs,
-        waiting = 0,
+        waiting = nil,
         total = self.counter.total,
-        runs = self.counter.runs
+        runs = self.counter.runs,
     }
 
     sys.waiting = sys.total - sys.running - sys.pending
@@ -411,27 +421,16 @@ function _M:stats()
     local jobs = {}
 
     for name, job in pairs(self.jobs) do
-        if job:is_running() then
-            sys.running = sys.running + 1
-
-        elseif pending_jobs[name] or ready_jobs[name] then
-            sys.pending = sys.pending + 1
-
-        else
-            sys.waiting = sys.waiting + 1
-        end
-
         local stats = job.stats
         jobs[name] = {
             name = name,
             meta = job:get_metadata(),
-            elapsed_time = utils.table_deepcopy(job.stats.elapsed_time),
+            elapsed_time = utils_table_deepcopy(job.stats.elapsed_time),
             runs = stats.runs,
             faults = stats.runs - stats.finish,
             last_err_msg = stats.last_err_msg,
         }
     end
-
 
     return {
         sys = sys,

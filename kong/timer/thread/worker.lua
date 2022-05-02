@@ -20,6 +20,8 @@ local ngx_DEBUG = ngx.DEBUG
 local assert = utils.assert
 -- luacheck: pop
 
+local utils_array_isempty = utils.array_isempty
+
 local ngx_worker_exiting = ngx.worker.exiting
 
 local string_format = string.format
@@ -50,7 +52,7 @@ local function thread_before(context, self)
 
     if not ok and err ~= "timeout" then
         ngx_log(ngx_ERR,
-                "failed to wait semaphore: "
+                "[timer] failed to wait semaphore: "
              .. err)
     end
 
@@ -86,13 +88,18 @@ local function thread_body(context, self)
             wheels:sync_time()
             job:re_cal_next_pointer(wheels)
             wheels:insert_job(job)
-            self.wake_up_super_thread()
+
+            local _, need_wake_up = wheels:update_earliest_expiry_time()
+
+            if need_wake_up then
+                self.wake_up_super_thread()
+            end
         end
 
         ::continue::
     end
 
-    if not utils.array_isempty(wheels.ready_jobs) then
+    if not utils_array_isempty(wheels.ready_jobs) then
         self.wake_up_mover_thread()
     end
 

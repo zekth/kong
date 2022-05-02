@@ -1,5 +1,6 @@
 local utils = require("kong.timer.utils")
 local wheel = require("kong.timer.wheel")
+local constants = require("kong.timer.constants")
 
 -- luacheck: push ignore
 local ngx_log = ngx.log
@@ -18,6 +19,11 @@ local ngx_DEBUG = ngx.DEBUG
 local assert = utils.assert
 -- luacheck: pop
 
+local utils_array_isempty = utils.array_isempty
+local utils_array_merge = utils.array_merge
+local utils_float_compare = utils.float_compare
+local utils_convert_second_to_step = utils.convert_second_to_step
+
 local table_insert = table.insert
 
 local string_format = string.format
@@ -35,11 +41,14 @@ local meta_table = {
 }
 
 
--- calculate how long until the next timer expires
-function _M:get_closest()
+---calculate how long until the next timer expires
+---@return number delay how long until the next timer expires
+---@return boolean is_earlier_than_before
+function _M:update_earliest_expiry_time()
     local delay = 0
     local lowest_wheel = self.lowest_wheel
     local resolution = self.resolution
+    local old = self.earliest_expiry_time
     local cur_msec_pointer = lowest_wheel:get_cur_pointer()
 
     -- `lowest_wheel.nelts - 1` means
@@ -65,12 +74,18 @@ function _M:get_closest()
 
         local jobs = lowest_wheel:get_jobs_by_pointer(pointer)
 
-        if not utils.array_isempty(jobs) then
+        if not utils_array_isempty(jobs) then
+            break
+        end
+
+        if delay >= constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN then
             break
         end
     end
 
-    return delay
+    self.earliest_expiry_time = ngx_now() + delay
+
+    return delay, old < self.earliest_expiry_time
 end
 
 
@@ -78,7 +93,7 @@ end
 -- * add all expired jobs from wheels to `wheels.ready_jobs`
 function _M:fetch_all_expired_jobs()
     for _, _wheel in ipairs(self.wheels) do
-        utils.array_merge(self.ready_jobs, _wheel:fetch_all_expired_jobs())
+        utils_array_merge(self.ready_jobs, _wheel:fetch_all_expired_jobs())
     end
 end
 
@@ -93,14 +108,14 @@ function _M:sync_time()
     ngx_update_time()
     self.real_time = ngx_now()
 
-    if utils.float_compare(self.real_time, self.expected_time) <= 0 then
+    if utils_float_compare(self.real_time, self.expected_time) <= 0 then
         -- This could be caused by a floating-point error
         -- or by NTP changing the time to an earlier time.
         return
     end
 
     local delta = self.real_time - self.expected_time
-    local steps = utils.convert_second_to_step(delta, resolution)
+    local steps = utils_convert_second_to_step(delta, resolution)
 
     lowest_wheel:spin_pointer(steps)
 
@@ -110,6 +125,9 @@ function _M:sync_time()
     -- `expected_time` to be larger than `real_time`
     -- after this line is run.
     self.expected_time = self.expected_time + resolution * steps
+
+    -- reset
+    self.earliest_expiry_time = 0
 end
 
 
@@ -132,6 +150,8 @@ function _M.new(wheel_setting, resolution)
 
         -- time of last update of wheel-group status
         expected_time = 0,
+
+        earliest_expiry_time = 0,
 
         -- Why use two queues?
         -- Because a zero-delay timer may create another zero-delay timer,

@@ -20,6 +20,8 @@ local ngx_DEBUG = ngx.DEBUG
 local assert = utils.assert
 -- luacheck: pop
 
+local utils_array_isempty = utils.array_isempty
+
 local ngx_now = ngx.now
 local ngx_sleep = ngx.sleep
 local ngx_update_time = ngx.update_time
@@ -66,7 +68,7 @@ local function thread_body(context, self)
         -- update the status of the wheel group
         wheels:sync_time()
 
-        if not utils.array_isempty(wheels.ready_jobs) then
+        if not utils_array_isempty(wheels.ready_jobs) then
             self.wake_up_mover_thread()
         end
     end
@@ -83,17 +85,17 @@ local function thread_after(context, self)
 
     counter.runs = runs
 
-    local closest = wheels:get_closest()
+    local delay, _ = wheels:update_earliest_expiry_time()
 
-    closest = math_max(closest, timer_sys.opt.resolution)
-    closest = math_min(closest,
-                       constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
+    delay = math_max(delay, timer_sys.opt.resolution)
+    delay = math_min(delay,
+                     constants.TOLERANCE_OF_GRACEFUL_SHUTDOWN)
 
-    local ok, err = self.wake_up_semaphore:wait(closest)
+    local ok, err = self.wake_up_semaphore:wait(delay)
 
     if not ok and err ~= "timeout" then
         ngx_log(ngx_ERR,
-                "failed to wait semaphore: "
+                "[timer] failed to wait semaphore: "
              .. err)
     end
 

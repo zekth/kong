@@ -20,6 +20,8 @@ local ngx_DEBUG = ngx.DEBUG
 local assert = utils.assert
 -- luacheck: pop
 
+local utils_array_isempty = utils.array_isempty
+
 local math_abs = math.abs
 
 local setmetatable = setmetatable
@@ -48,7 +50,7 @@ local function thread_before(context, self)
 
     if not ok and err ~= "timeout" then
         ngx_log(ngx_ERR,
-                "failed to wait semaphore: "
+                "[timer] failed to wait semaphore: "
              .. err)
     end
 
@@ -61,10 +63,10 @@ local function thread_body(context, self)
     local wheels = timer_sys.wheels
 
     local is_no_pending_jobs =
-        utils.array_isempty(wheels.pending_jobs)
+        utils_array_isempty(wheels.pending_jobs)
 
     local is_no_ready_jobs =
-        utils.array_isempty(wheels.ready_jobs)
+        utils_array_isempty(wheels.ready_jobs)
 
     if not is_no_pending_jobs then
         self.wake_up_worker_thread()
