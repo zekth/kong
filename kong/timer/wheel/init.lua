@@ -1,22 +1,4 @@
-local utils = require("kong.timer.utils")
 local array = require("kong.timer.array")
-
--- luacheck: push ignore
-local ngx_log = ngx.log
-local ngx_STDERR = ngx.STDERR
-local ngx_EMERG = ngx.EMERG
-local ngx_ALERT = ngx.ALERT
-local ngx_CRIT = ngx.CRIT
-local ngx_ERR = ngx.ERR
-local ngx_WARN = ngx.WARN
-local ngx_NOTICE = ngx.NOTICE
-local ngx_INFO = ngx.INFO
-local ngx_DEBUG = ngx.DEBUG
--- luacheck: pop
-
--- luacheck: push ignore
-local assert = utils.assert
--- luacheck: pop
 
 local array_new = array.new
 
@@ -113,7 +95,7 @@ function _M:insert(job)
     local next_pointer = job:get_next_pointer(self.id)
 
     if next_pointer then
-        self.slots[next_pointer]:push(job)
+        self.slots[next_pointer]:push_back(job)
         return true, nil
     end
 
@@ -123,7 +105,7 @@ function _M:insert(job)
         return lower_wheel:insert(job)
     end
 
-    self.expired_jobs:push(job)
+    self.expired_jobs:push_back(job)
 
     return true, nil
 end
@@ -155,12 +137,12 @@ function _M:spin_pointer(offset)
         local jobs = self:get_jobs_by_pointer(final_pointer)
 
         while not jobs:is_empty() do
-            local job = jobs:pop()
+            local job = jobs:pop_back()
 
             if lower_wheel then
                 lower_wheel:insert(job)
             else
-                expired_jobs:push(job)
+                expired_jobs:push_back(job)
             end
         end
     end

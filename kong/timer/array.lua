@@ -1,9 +1,5 @@
 local utils = require("kong.timer.utils")
 
--- luacheck: push ignore
-local assert = utils.assert
--- luacheck: pop
-
 local utils_table_new = utils.table_new
 local utils_table_clear = utils.table_clear
 
@@ -38,23 +34,29 @@ function _M.next(array, index)
 end
 
 
+function _M:length()
+    return self.nelts
+end
+
+
 function _M:is_empty()
     return self.nelts == 0
 end
 
 
-function _M:pop()
+function _M:pop_back()
     if self.nelts == 0 then
         return nil
     end
 
     local value = self.elts[self.nelts]
+    self.elts[self.nelts] = nil
     self.nelts = self.nelts - 1
     return value
 end
 
 
-function _M:push(value)
+function _M:push_back(value)
     self.elts[self.nelts + 1] = value
     self.nelts = self.nelts + 1
 end
@@ -93,7 +95,7 @@ function _M.merge(dst, src)
     end
 
     for i = 1, src.nelts do
-        dst:push(src.elts[i])
+        dst:push_back(src.elts[i])
     end
 end
 

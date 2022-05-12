@@ -4,22 +4,8 @@ local wheel_group = require("kong.timer.wheel.group")
 local constants = require("kong.timer.constants")
 local thread_group = require("kong.timer.thread.group")
 
--- luacheck: push ignore
 local ngx_log = ngx.log
-local ngx_STDERR = ngx.STDERR
-local ngx_EMERG = ngx.EMERG
-local ngx_ALERT = ngx.ALERT
-local ngx_CRIT = ngx.CRIT
-local ngx_ERR = ngx.ERR
-local ngx_WARN = ngx.WARN
 local ngx_NOTICE = ngx.NOTICE
-local ngx_INFO = ngx.INFO
-local ngx_DEBUG = ngx.DEBUG
--- luacheck: pop
-
--- luacheck: push ignore
-local assert = utils.assert
--- luacheck: pop
 
 local utils_float_compare = utils.float_compare
 local utils_table_deepcopy = utils.table_deepcopy
@@ -79,7 +65,7 @@ local function create(self, name, callback, delay, timer_type, argc, argv)
     self.counter.total = self.counter.total + 1
 
     if job:is_immediate() then
-        wheels.ready_jobs:push(job)
+        wheels.ready_jobs:push_back(job)
         self.thread_group:woke_up_mover_thread()
 
         return name, nil
@@ -407,7 +393,7 @@ function _M:stats()
 
     local sys = {
         running = self.counter.running,
-        pending = #pending_jobs + #ready_jobs,
+        pending = pending_jobs:length() + ready_jobs:length(),
         waiting = nil,
         total = self.counter.total,
         runs = self.counter.runs,
