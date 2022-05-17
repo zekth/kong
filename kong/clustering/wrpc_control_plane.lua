@@ -151,7 +151,7 @@ function _M:export_deflated_reconfigure_payload()
     end
   end
 
-  local config_hash, hashes = self:calculate_config_hash(config_table)
+  local config_hash = self:calculate_config_hash(config_table)
   config_version = config_version + 1
 
   -- store serialized plugins map for troubleshooting purposes
@@ -162,8 +162,7 @@ function _M:export_deflated_reconfigure_payload()
   self.config_call_rpc, self.config_call_args = assert(service:encode_args("ConfigService.SyncConfig", {
     config = config_table,
     version = config_version,
-    config_hash = config_hash,
-    hashes = hashes,
+    hash = config_hash,
   }))
 
   return config_table, nil

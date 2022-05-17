@@ -192,18 +192,6 @@ function _M:calculate_config_hash(config_table)
   }
 end
 
-local function fill_empty_hashes(hashes)
-  for _, field_name in ipairs{
-    "config",
-    "routes",
-    "services",
-    "plugins",
-    "upstreams",
-    "targets",
-  } do
-    hashes[field_name] = hashes[field_name] or DECLARATIVE_EMPTY_CONFIG_HASH
-  end
-end
 
 function _M:request_version_negotiation()
   local response_data, err = version_negotiation.request_version_handshake(self.conf, self.cert, self.cert_key)
@@ -222,10 +210,6 @@ function _M:update_config(config_table, config_hash, update_cache, hashes)
 
   if not config_hash then
     config_hash, hashes = self:calculate_config_hash(config_table)
-  end
-
-  if hashes then
-    fill_empty_hashes(hashes)
   end
 
   local current_hash = declarative.get_current_hash()
@@ -250,8 +234,8 @@ function _M:update_config(config_table, config_hash, update_cache, hashes)
   -- NOTE: no worker mutex needed as this code can only be
   -- executed by worker 0
 
-  local res
-  res, err = declarative.load_into_cache_with_events(entities, meta, new_hash, hashes)
+  local res, err =
+  declarative.load_into_cache_with_events(entities, meta, new_hash, hashes)
   if not res then
     return nil, err
   end
