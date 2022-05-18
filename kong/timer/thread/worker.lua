@@ -120,23 +120,23 @@ end
 
 function _M:kill()
     local threads = self.threads
-    for i = 1, #threads do
-        threads[i]:kill()
+    for _, thread in pairs(threads) do
+        thread:kill()
     end
 end
 
 
 function _M:wake_up()
     local wake_up_semaphore = self.wake_up_semaphore
-    wake_up_semaphore:post(#self.threads)
+    wake_up_semaphore:post(self.number_of_threads)
 end
 
 
 function _M:spawn()
     local ok, err
     local threads = self.threads
-    for i = 1, #threads do
-        ok, err = threads[i]:spawn()
+    for _, thread in pairs(threads) do
+        ok, err = thread:spawn()
 
         if not ok then
             return false, err
@@ -151,12 +151,13 @@ function _M.new(timer_sys, threads)
     local self = {
         timer_sys = timer_sys,
         wake_up_semaphore = semaphore.new(0),
+        number_of_threads = threads,
         threads = {},
     }
 
     for i = 1, threads do
         local name = string_format("worker#%d", i)
-        self.threads[i] = loop.new(name, {
+        self.threads[name] = loop.new(name, {
             init = {
                 argc = 0,
                 argv = {},
