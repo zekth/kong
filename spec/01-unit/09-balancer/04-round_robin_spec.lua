@@ -836,16 +836,23 @@ describe("[round robin balancer]", function()
       end)
       ngx.thread.wait(t1)
       ngx.thread.wait(t2)
-      ngx.sleep(0)
-      assert.same({
-        [1] = 'thread1 start',
-        [2] = 'thread1 end',
-        [3] = 'thread2 start',
-        [4] = 'thread2 end',
-        [5] = 'callback',
-        [6] = 'callback',
-        [7] = 'callback',
-      }, order_of_events)
+      ngx.sleep(1)
+
+      wait_until(function ()
+        local ok, err = pcall(function ()
+          assert.same({
+            [1] = 'thread1 start',
+            [2] = 'thread1 end',
+            [3] = 'thread2 start',
+            [4] = 'thread2 end',
+            [5] = 'callback',
+            [6] = 'callback',
+            [7] = 'callback',
+          }, order_of_events)
+        end)
+
+        return ok, err
+      end, 5)
     end)
     it("equal weights and 'fitting' indices", function()
       dnsA({
