@@ -73,6 +73,10 @@
 
 ### Breaking Changes
 
+- Deprecate/stop producing Debian 8 "Jessie" containers and packages (EOLed June 2020)
+  [Kong/kong-build-tools #448](https://github.com/Kong/kong-build-tools/pull/448)
+  [Kong/kong-distributions #766](https://github.com/Kong/kong-distributions/pull/766)
+
 #### Admin API
 
 - Insert and update operations on target entities require using the `PUT` HTTP
@@ -81,11 +85,20 @@
   when updating to Kong 3.0.
 - Insert and update operations on duplicated target entities returns 409.
   [#8179](https://github.com/Kong/kong/pull/8179)
+- The list of reported plugins available on the server now returns a table of
+  metadata per plugin instead of a boolean `true`.
+  [#8810](https://github.com/Kong/kong/pull/8810)
 
 #### PDK
 
 - The PDK is no longer versioned
   [#8585](https://github.com/Kong/kong/pull/8585)
+
+#### Plugins
+
+- The HTTP-log plugin `headers` field now only takes a single string per header name,
+  where it previously took an array of values
+  [#6992](https://github.com/Kong/kong/pull/6992)
 
 ### Deprecations
 
@@ -93,6 +106,9 @@
   [#8552](https://github.com/Kong/kong/pull/8552). If you are using
   [Go plugin server](https://github.com/Kong/go-pluginserver), please migrate your plugins to use the
   [Go PDK](https://github.com/Kong/go-pdk) before upgrading.
+- The migration helper library is no longer supplied with Kong (we didn't use it for anything,
+  and the only function it had, was for the deprecated Cassandra).
+  [#8781](https://github.com/Kong/kong/pull/8781)
 
 
 #### Plugins
@@ -115,18 +131,29 @@
 
 - Bumped pgmoon from 1.13.0 to 1.14.0
   [#8429](https://github.com/Kong/kong/pull/8429)
-- OpenSSL bumped to 1.1.1n
+- OpenSSL bumped to from 1.1.1n to 1.1.1o
   [#8544](https://github.com/Kong/kong/pull/8544)
+  [#8752](https://github.com/Kong/kong/pull/8752)
 - Bumped resty.openssl from 0.8.5 to 0.8.7
   [#8592](https://github.com/Kong/kong/pull/8592)
+  [#8753](https://github.com/Kong/kong/pull/8753)
 - Bumped inspect from 3.1.2 to 3.1.3
   [#8589](https://github.com/Kong/kong/pull/8589)
 - Bumped resty.acme from 0.7.2 to 0.8.0
   [#8680](https://github.com/Kong/kong/pull/8680)
 - Bumped luarocks from 3.8.0 to 3.9.0
   [#8700](https://github.com/Kong/kong/pull/8700)
+- Bumped luasec from 1.0.2 to 1.1.0
+  [#8754](https://github.com/Kong/kong/pull/8754)
+- Bumped resty.healthcheck from 1.5.0 to 1.5.1
+  [#8755](https://github.com/Kong/kong/pull/8755)
 
 ### Additions
+
+#### Core
+
+- Added `cache_key` on target entity for uniqueness detection.
+  [#8179](https://github.com/Kong/kong/pull/8179)
 
 #### Plugins
 
@@ -157,6 +184,8 @@ a restart (e.g., upon a plugin server crash).
   [#8547](https://github.com/Kong/kong/pull/8547)
 - Fixed an issue on trying to reschedule the DNS resolving timer when Kong was
   being reloaded. [#8702](https://github.com/Kong/kong/pull/8702)
+- The private stream API has been rewritten to allow for larger message payloads
+  [#8641](https://github.com/Kong/kong/pull/8641)
 
 #### Plugins
 
@@ -413,6 +442,7 @@ In this release we continued our work on better performance:
   Thanks [beldahanit](https://github.com/beldahanit) for reporting the issue!
 - Old `BasePlugin` is deprecated and will be removed in a future version of Kong.
   Porting tips in the [documentation](https://docs.konghq.com/gateway-oss/2.3.x/plugin-development/custom-logic/#porting-from-old-baseplugin-style)
+- The deprecated **BasePlugin** has been removed. [#7961](https://github.com/Kong/kong/pull/7961)
 
 ### Fixes
 
@@ -898,6 +928,7 @@ grpc-gateway plugin first:
 
 #### Plugins
 
+- All custom plugins that are using the deprecated `BasePlugin` class have to remove this inheritance.
 - **LDAP-auth**: The LDAP Authentication schema now includes a default value for the `config.ldap_port` parameter
   that matches the documentation. Before the plugin documentation [Parameters](https://docs.konghq.com/hub/kong-inc/ldap-auth/#parameters)
   section included a reference to a default value for the LDAP port; however, the default value was not included in the plugin schema.
