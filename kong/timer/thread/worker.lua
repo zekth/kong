@@ -109,7 +109,7 @@ local function thread_body(context, self)
     while not wheels.pending_jobs:is_empty() and
           not ngx_worker_exiting()
     do
-        local job = wheels.pending_jobs:pop_back()
+        local job = wheels.pending_jobs:pop_left()
 
         if not job:is_runnable() then
             goto continue
@@ -184,7 +184,7 @@ end
 
 function _M:wake_up()
     local wake_up_semaphore = self.wake_up_semaphore
-    wake_up_semaphore:post(self.alive_threads)
+    wake_up_semaphore:post(self.alive_threads_count)
 end
 
 
