@@ -170,7 +170,7 @@ for _, consistency in ipairs(bu.consistencies) do
         assert.are.equal(requests * 0.2, count3.total)
       end)
 
-      it("removing a target #db #flaky", function()
+      it("removing a target #db", function()
         local requests = bu.SLOTS * 2 -- go round the balancer twice
 
         bu.begin_testcase_setup(strategy, bp)
