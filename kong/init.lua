@@ -567,8 +567,6 @@ function Kong.init_worker()
   -- duplicated seeds.
   math.randomseed()
 
-  local timer = require("kong.timer")
-
   hack_timer_sys_start()
 
   -- init DB

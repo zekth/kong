@@ -74,7 +74,10 @@ return function(options)
     local timer_sys = { }
 
     if options.cli or options.rbusted then
-      timer_sys = timer_module.new({ threads = 32 })
+      timer_sys = timer_module.new({
+        min_threads = 16,
+        max_threads = 32,
+      })
       timer_sys:start()
 
     else
