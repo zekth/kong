@@ -169,7 +169,6 @@ function wrpc_service:add(service_name)
         if type_annotations then
           local tag_key, tag_value = annotation:match("^%s*(%S-)=(%S+)%s*$")
           if tag_key and tag_value then
-            tag_value = tag_value
             local tags = type_annotations[identifier] or {}
             type_annotations[identifier] = tags
             tags[tag_key] = tag_value
