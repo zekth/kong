@@ -51,6 +51,11 @@ local _log_prefix = "[wrpc-clustering] "
 
 local wrpc_config_service
 
+local _M = {
+  DPCP_CHANNEL_NAME = "dp_cp",
+}
+
+local DPCP_CHANNEL_NAME = _M.DPCP_CHANNEL_NAME
 
 local function handle_export_deflated_reconfigure_payload(self)
   local ok, p_err, err = pcall(self.export_deflated_reconfigure_payload, self)
@@ -491,7 +496,7 @@ function _M:handle_cp_websocket()
   end
 
   -- connection established
-  local w_peer = wrpc.new_peer(wb, get_config_service(self))
+  local w_peer = wrpc.new_peer(DPCP_CHANNEL_NAME, get_config_service(self), wb)
   local client = {
     last_seen = ngx_time(),
     peer = w_peer,

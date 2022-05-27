@@ -26,8 +26,10 @@ local _log_prefix = "[wrpc-clustering] "
 local DECLARATIVE_EMPTY_CONFIG_HASH = constants.DECLARATIVE_EMPTY_CONFIG_HASH
 
 local _M = {
-  DPCP_CHANNEL_NAME = "DP-CP_config",
+  DPCP_CHANNEL_NAME = "dp_cp",
 }
+
+local DPCP_CHANNEL_NAME = _M.DPCP_CHANNEL_NAME
 
 function _M.new(parent)
   local self = {
@@ -138,7 +140,7 @@ function _M:communicate(premature)
   end
 
   local config_semaphore = semaphore.new(0)
-  local peer = wrpc.new_peer(c, get_config_service(), { channel = self.DPCP_CHANNEL_NAME })
+  local peer = wrpc.new_peer(DPCP_CHANNEL_NAME, get_config_service(), c)
 
   peer.config_semaphore = config_semaphore
   peer.config_obj = self
