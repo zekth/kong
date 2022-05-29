@@ -102,11 +102,6 @@ local function create_balancer_exclusive(upstream)
   local health_threshold = upstream.healthchecks and
     upstream.healthchecks.threshold or nil
 
-  if not targets and not healthcheckers then
-    -- wait for zero-second timer
-    sleep(1)
-  end
-
   local targets_list, err = targets.fetch_targets(upstream)
   if not targets_list then
     return nil, "failed fetching targets:" .. err
