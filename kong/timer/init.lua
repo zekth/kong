@@ -100,16 +100,6 @@ end
 local function create(self, name, callback, delay, timer_type, argc, argv)
     local wheels = self.wheels
     local jobs = self.jobs
-    if not name then
-        name = string_format("unix_timestamp=%f;counter=%d",
-                             math_floor(ngx_now() * 1000),
-                             self.id_counter)
-        self.id_counter = self.id_counter + 1
-    end
-
-    if jobs[name] then
-        return false, "already exists timer"
-    end
 
     wheels:sync_time()
 
@@ -121,8 +111,14 @@ local function create(self, name, callback, delay, timer_type, argc, argv)
                                self.opt.debug,
                                argc,
                                argv)
+
+    if jobs[job.name] then
+        return false, "already exists timer"
+    end
+
     job:enable()
-    jobs[name] = job
+
+    jobs[job.name] = job
     self.sys_stats.total = self.sys_stats.total + 1
 
     if job:is_immediate() then
@@ -130,7 +126,7 @@ local function create(self, name, callback, delay, timer_type, argc, argv)
         self.thread_group:wake_up_super_thread()
         report_job_expire_callback_inernal(self, job)
 
-        return name, nil
+        return job.name, nil
     end
 
     local ok, err = wheels:insert_job(job)
@@ -142,7 +138,7 @@ local function create(self, name, callback, delay, timer_type, argc, argv)
     end
 
     if ok then
-        return name, nil
+        return job.name, nil
     end
 
     return false, err
@@ -373,13 +369,12 @@ function _M:freeze()
 end
 
 
--- TODO: rename this method
 function _M:destroy()
     self.thread_group:kill()
 end
 
 
-function _M:once(name, delay, callback, ...)
+function _M:named_at(name, delay, callback, ...)
     assert(self.enable, "the timer module is not started")
     assert(type(callback) == "function", "expected `callback` to be a function")
 
@@ -399,7 +394,6 @@ function _M:once(name, delay, callback, ...)
         return ngx_timer_at(delay, callback, ...)
     end
 
-    -- TODO: desc the logic and add related tests
     local name_or_false, err =
         create(self, name, callback, delay,
                TIMER_ONCE, select("#", ...), { ... })
@@ -408,7 +402,7 @@ function _M:once(name, delay, callback, ...)
 end
 
 
-function _M:every(name, interval, callback, ...)
+function _M:named_every(name, interval, callback, ...)
     assert(self.enable, "the timer module is not started")
     assert(type(callback) == "function", "expected `callback` to be a function")
 
@@ -435,7 +429,17 @@ function _M:every(name, interval, callback, ...)
 end
 
 
-function _M:run(name)
+function _M:at(delay, callback, ...)
+    return self:named_at(nil, delay, callback, ...)
+end
+
+
+function _M:every(interval, callback, ...)
+    return self:named_every(nil, interval, callback, ...)
+end
+
+
+function _M:resume(name)
     assert(type(name) == "string", "expected `name` to be a string")
 
     local jobs = self.jobs
