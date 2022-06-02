@@ -252,11 +252,11 @@ function _M:communicate(premature)
 
           if msg.type == "reconfigure" then
             if msg.timestamp then
-              ngx_log(ngx_DEBUG, _log_prefix, "received reconfigure frame from control plane with timestamp: ",
+              ngx_log(ngx_INFO, _log_prefix, "received reconfigure frame from control plane with timestamp: ",
                                  msg.timestamp, log_suffix)
 
             else
-              ngx_log(ngx_DEBUG, _log_prefix, "received reconfigure frame from control plane", log_suffix)
+              ngx_log(ngx_INFO, _log_prefix, "received reconfigure frame from control plane", log_suffix)
             end
 
             self.next_config = assert(msg.config_table)
