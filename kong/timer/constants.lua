@@ -1,7 +1,4 @@
-local math_modf = math.modf
-local math_floor = math.floor
-
-local string_format = string.format
+local assert = assert
 
 local _M = {
     -- disable debug mode
@@ -12,6 +9,9 @@ local _M = {
     DEFAULT_MAX_THREADS = 256,
 
     DEFAULT_AUTO_SCALING_LOAD_THRESHOLD = 5,
+
+    -- 10s
+    DEFAULT_AUTO_SCALING_INERVAL = 10,
 
     -- restart the thread after every 2000 jobs have been run
     DEFAULT_RESTART_THREAD_AFTER_RUNS = 2000,
@@ -36,6 +36,9 @@ local _M = {
 
     -- for Nginx's graceful shutdown
     TOLERANCE_OF_GRACEFUL_SHUTDOWN = 1,
+
+    -- 1s
+    SCALING_RECORD_INTERVAL = 1,
 }
 
 -- We don't need a high accuracy.
@@ -43,8 +46,14 @@ assert(_M.DEFAULT_RESOLUTION >= _M.MIN_RESOLUTION,
     "`DEFAULT_RESOLUTION` must be greater than "
  .. "or equal to `MIN_RESOLUTION`")
 
-
 do
+    local type = type
+    local error = error
+    local math_modf = math.modf
+    local math_floor = math.floor
+    local ipairs = ipairs
+    local string_format = string.format
+
     local wheel_setting = _M.DEFAULT_WHEEL_SETTING
 
     assert(type(wheel_setting) == "table",
