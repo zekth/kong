@@ -7,6 +7,7 @@ local pb = require "pb"
 local table_merge = utils.table_merge
 local HTTP_PORT = 35000
 
+print("ok")
 for _, strategy in helpers.each_strategy() do
   describe("opentelemetry exporter #" .. strategy, function()
     local proxy_client
