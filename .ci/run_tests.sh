@@ -33,28 +33,26 @@ fi
 if [ "$TEST_SUITE" == "integration" ]; then
     if [[ "$TEST_SPLIT" == first* ]]; then
         # GitHub Actions, run first batch of integration tests
-        #eval "$TEST_CMD" $(ls -d spec/02-integration/* | head -n4)
-        :
+        eval "$TEST_CMD" $(ls -d spec/02-integration/* | head -n4)
+
     elif [[ "$TEST_SPLIT" == second* ]]; then
         # GitHub Actions, run second batch of integration tests
         # Note that the split here is chosen carefully to result
         # in a similar run time between the two batches, and should
         # be adjusted if imbalance become significant in the future
-        #eval "$TEST_CMD" $(ls -d spec/02-integration/* | tail -n+5)
-        :
+        eval "$TEST_CMD" $(ls -d spec/02-integration/* | tail -n+5)
+
     else
         # Non GitHub Actions
-        #eval "$TEST_CMD" spec/02-integration/
-        :
+        eval "$TEST_CMD" spec/02-integration/
     fi
 fi
 
 if [ "$TEST_SUITE" == "dbless" ]; then
-    # eval "$TEST_CMD" spec/02-integration/02-cmd \
-    #                  spec/02-integration/05-proxy \
-    #                  spec/02-integration/04-admin_api/02-kong_routes_spec.lua \
-    #                  spec/02-integration/04-admin_api/15-off_spec.lua
-    :
+    eval "$TEST_CMD" spec/02-integration/02-cmd \
+                     spec/02-integration/05-proxy \
+                     spec/02-integration/04-admin_api/02-kong_routes_spec.lua \
+                     spec/02-integration/04-admin_api/15-off_spec.lua
 fi
 if [ "$TEST_SUITE" == "plugins" ]; then
     set +ex
@@ -62,20 +60,18 @@ if [ "$TEST_SUITE" == "plugins" ]; then
 
     if [[ "$TEST_SPLIT" == first* ]]; then
         # GitHub Actions, run first batch of plugin tests
-        # PLUGINS=$(ls -d spec/03-plugins/* | head -n22)
-        PLUGINS="spec/03-plugins/37-opentelemetry/04-exporter_spec.lua"
+        PLUGINS=$(ls -d spec/03-plugins/* | head -n22)
 
     elif [[ "$TEST_SPLIT" == second* ]]; then
         # GitHub Actions, run second batch of plugin tests
         # Note that the split here is chosen carefully to result
         # in a similar run time between the two batches, and should
         # be adjusted if imbalance become significant in the future
-        # PLUGINS=$(ls -d spec/03-plugins/* | tail -n+23)
-        PLUGINS=""
+        PLUGINS=$(ls -d spec/03-plugins/* | tail -n+23)
 
     else
         # Non GitHub Actions
-        PLUGINS=""
+        PLUGINS=$(ls -d spec/03-plugins/*)
     fi
 
     for p in $PLUGINS; do
