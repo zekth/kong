@@ -67,8 +67,11 @@ for _, strategy in helpers.each_strategy() do
       end)
 
       lazy_teardown(function()
+        print("killing!!!!!")
         helpers.kill_http_server(HTTP_PORT)
+        print("killing2!!!!!")
         helpers.stop_kong()
+        print("killing3!!!!!")
       end)
 
       it("works", function ()
@@ -112,12 +115,14 @@ for _, strategy in helpers.each_strategy() do
 
     describe("overwrite resource attributes #http", function ()
       lazy_setup(function()
+        print("set!!!!!")
         setup_instrumentations("all", {
           resource_attributes = {
             ["service.name"] = "kong_oss",
             ["os.version"] = "debian",
           }
         })
+        print("set2!!!!!")
       end)
 
       lazy_teardown(function()
