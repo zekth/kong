@@ -1,3 +1,4 @@
+VARS_OLD := $(.VARIABLES)
 OS := $(shell uname | awk '{print tolower($$0)}')
 MACHINE := $(shell uname -m)
 
@@ -40,7 +41,7 @@ KONG_PACKAGE_NAME ?= kong
 # This logic should mirror the kong-build-tools equivalent
 KONG_VERSION ?= `echo $(KONG_SOURCE_LOCATION)/kong-*.rockspec | sed 's,.*/,,' | cut -d- -f2`
 
-TAG := $(shell git describe --exact-match HEAD || true)
+TAG ?= $(shell git describe --exact-match HEAD || true)
 
 ifneq ($(TAG),)
 	# We're building a tag
@@ -67,6 +68,15 @@ else
 	KONG_PACKAGE_NAME ?= kong-${BRANCH}
 	KONG_VERSION ?= `date +%Y-%m-%d`
 endif
+
+debug:
+	@$(foreach v, \
+		$(sort $(filter-out $(VARS_OLD) VARS_OLD,$(.VARIABLES))), \
+		( \
+			echo '$(v) = $($(v))' ; echo \
+			      $(v) = $($(v)) ;  \
+		) | uniq ; \
+	)
 
 release:
 ifeq ($(ISTAG),false)
