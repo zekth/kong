@@ -38,6 +38,7 @@ pipeline {
                         CACHE = 'false'
                         UPDATE_CACHE = 'true'
                         USER = 'travis'
+                        KONG_VERSION = '2.6.1'
                         KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
                         AWS_ACCESS_KEY = credentials('AWS_ACCESS_KEY')
