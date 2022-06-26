@@ -276,5 +276,35 @@ for _, strategy in helpers.each_strategy() do
         assert.spy(post_hook).was_called(1)
       end)
     end)
+
+    describe("concurrent delete", function ()
+      local post_hook = spy.new(function () end)
+
+      lazy_setup(function()
+        hooks.register_hook("dao:delete:post", function()
+          post_hook()
+          return true
+        end)
+      end)
+
+      it("post delete hook should only be called once", function()
+        finally(function()
+          hooks.clear_hooks()
+        end)
+
+        local co = {}
+        for c = 1, 10 do
+          co[c] = coroutine.create(function ()
+            db.service:delete({ id = s2.id })
+          end)
+        end
+
+        for c = 1, 10 do
+          coroutine.resume(co[c])
+        end
+    
+        assert.spy(post_hook).was_called(1)
+      end)
+    end)
   end)
 end
