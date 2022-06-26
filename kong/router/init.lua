@@ -6,6 +6,7 @@ local kong = kong
 
 local traditional = require("kong.router.traditional")
 local atc_compat = require("kong.router.atc_compat")
+local is_http = ngx.config.subsystem == "http"
 
 
 local _MT = { __index = _M, }
@@ -28,7 +29,8 @@ end
 
 
 function _M.new(routes, cache, cache_neg)
-  if not kong or
+  if not is_http or
+     not kong or
      not kong.configuration or
      kong.configuration.router_flavor == "traditional"
   then

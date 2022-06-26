@@ -9,7 +9,11 @@ local bit = require("bit")
 local ffi = require("ffi")
 
 
+local ngx = ngx
 local tb_clear = require("table.clear")
+local tb_concat = table.concat
+local tb_insert = table.insert
+local tb_nkeys = require("table.nkeys")
 local re_find = ngx.re.find
 local re_match = ngx.re.match
 local get_method = ngx.req.get_method
@@ -18,13 +22,14 @@ local normalize = require("kong.tools.uri").normalize
 local hostname_type = require("kong.tools.utils").hostname_type
 local find = string.find
 local lower = string.lower
+local upper = string.upper
 local byte = string.byte
 local sub = string.sub
+local tonumber = tonumber
 local ffi_new = ffi.new
 local max = math.max
 local split_port = require("kong.router.traditional").split_port
 local bor, band, lshift, rshift = bit.bor, bit.band, bit.lshift, bit.rshift
-local tb_size = require("pl.tablex").size
 local header        = ngx.header
 local var           = ngx.var
 local ngx_log       = ngx.log
@@ -171,7 +176,7 @@ local function gen_for_field(name, op, vals, vals_transform)
     end
 
     if values_n > 0 then
-      return "(" .. table.concat(values, " || ") .. ")"
+      return "(" .. tb_concat(values, " || ") .. ")"
     end
   end
 
@@ -179,63 +184,69 @@ local function gen_for_field(name, op, vals, vals_transform)
 end
 
 
+local OP_EQUAL = "=="
+local OP_PREFIX = "^="
+local OP_POSTFIX = "=^"
+local OP_REGEX = "~"
+
+
 local function get_atc(route)
   local out = {}
   local out_n = 0
 
-  local gen = gen_for_field("net.protocol", "==", route.protocols)
+  local gen = gen_for_field("net.protocol", OP_EQUAL, route.protocols)
   if gen then
-    table.insert(out, gen)
+    tb_insert(out, gen)
   end
 
-  local gen = gen_for_field("http.method", "==", route.methods)
+  local gen = gen_for_field("http.method", OP_EQUAL, route.methods)
   if gen then
-    table.insert(out, gen)
+    tb_insert(out, gen)
   end
 
-  local gen = gen_for_field("tls.sni", "==", route.snis)
+  local gen = gen_for_field("tls.sni", OP_EQUAL, route.snis)
   if gen then
-    table.insert(out, gen)
+    tb_insert(out, gen)
   end
 
   local gen = gen_for_field("http.host", function(host)
     if host:sub(1, 1) == "*" then
       -- postfix matching
-      return "=^"
+      return OP_POSTFIX
     end
 
     if host:sub(-1) == "*" then
       -- prefix matching
-      return "^="
+      return OP_PREFIX
     end
 
-    return "=="
+    return OP_EQUAL
   end, route.hosts, function(op, p)
-    if op == "=^" then
+    if op == OP_POSTFIX then
       return p:sub(2)
     end
 
-    if op == "^=" then
+    if op == OP_PREFIX then
       return p:sub(1, -2)
     end
 
     return p
   end)
   if gen then
-    table.insert(out, gen)
+    tb_insert(out, gen)
   end
 
   local gen = gen_for_field("http.path", function(path)
-    return re_find(path, [[[a-zA-Z0-9\.\-_~/%]*$]], "ajo") and "^=" or "~"
+    return re_find(path, [[[a-zA-Z0-9\.\-_~/%]*$]], "ajo") and OP_PREFIX or OP_REGEX
   end, route.paths, function(op, p)
-    if op == "~" then
+    if op == OP_REGEX then
       return normalize_regex(p):gsub("\\", "\\\\")
     end
 
     return normalize(p, true)
   end)
   if gen then
-    table.insert(out, gen)
+    tb_insert(out, gen)
   end
 
   if route.headers then
@@ -245,22 +256,22 @@ local function get_atc(route)
       for _, ind in ipairs(v) do
         local name = "any(http.headers." .. h:gsub("-", "_"):lower() .. ")"
         local value = ind
-        local op = "=="
+        local op = OP_EQUAL
         if ind:sub(1, 2) == "~*" then
           value = ind:sub(3):gsub("\\", "\\\\")
-          op = "~"
+          op = OP_REGEX
         end
 
-        table.insert(single_header, name .. " " .. op .. " \"" .. value:lower() .. "\"")
+        tb_insert(single_header, name .. " " .. op .. " \"" .. value:lower() .. "\"")
       end
 
-      table.insert(headers, "(" .. table.concat(single_header, " || ") .. ")")
+      tb_insert(headers, "(" .. tb_concat(single_header, " || ") .. ")")
     end
 
-    table.insert(out, table.concat(headers, " && "))
+    tb_insert(out, tb_concat(headers, " && "))
   end
 
-  return table.concat(out, " && ")
+  return tb_concat(out, " && ")
 end
 
 
@@ -293,7 +304,7 @@ local function route_priority(r)
     match_weight = match_weight + 1
   end
 
-  local headers_count = r.headers and tb_size(r.headers) or 0
+  local headers_count = r.headers and tb_nkeys(r.headers) or 0
 
   if headers_count > 0 then
     match_weight = match_weight + 1
@@ -376,8 +387,9 @@ function _M.new(routes)
   }, _MT)
 
   for _, r in ipairs(routes) do
-    router.routes[r.route.id] = r.route
-    router.services[r.route.id] = r.service
+    local route_id = r.route.id
+    router.routes[route_id] = r.route
+    router.services[route_id] = r.service
 
     if kong.configuration.router_flavor == "traditional_compatible" then
       assert(inst:add_matcher(route_priority(r.route), r.route.id, get_atc(r.route)))
@@ -437,16 +449,16 @@ function _M:select(req_method, req_uri, req_host, req_scheme,
   if req_scheme and type(req_scheme) ~= "string" then
     error("scheme must be a string", 2)
   end
-  if src_ip and type(src_ip) ~= "string" then
+  if _src_ip and type(_src_ip) ~= "string" then
     error("src_ip must be a string", 2)
   end
-  if src_port and type(src_port) ~= "number" then
+  if _src_port and type(_src_port) ~= "number" then
     error("src_port must be a number", 2)
   end
-  if dst_ip and type(dst_ip) ~= "string" then
+  if _dst_ip and type(_dst_ip) ~= "string" then
     error("dst_ip must be a string", 2)
   end
-  if dst_port and type(dst_port) ~= "number" then
+  if _dst_port and type(_dst_port) ~= "number" then
     error("dst_port must be a number", 2)
   end
   if sni and type(sni) ~= "string" then
