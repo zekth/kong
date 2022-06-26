@@ -289,6 +289,22 @@ return {
           -- Do nothing, accept existing state
         END;
       $$;
+
+      DO $$
+        BEGIN
+          ALTER TABLE IF EXISTS ONLY "routes" ADD COLUMN "atc" TEXT;
+        EXCEPTION WHEN duplicate_column THEN
+          -- Do nothing, accept existing state
+        END;
+      $$;
+
+      DO $$
+        BEGIN
+          ALTER TABLE IF EXISTS ONLY "routes" ADD COLUMN "priority" BIGINT;
+        EXCEPTION WHEN duplicate_column THEN
+          -- Do nothing, accept existing state
+        END;
+      $$;
     ]],
     teardown = function(connector)
       local _, err = connector:query([[
@@ -337,6 +353,9 @@ return {
 
       -- add new hash_fallback_uri_capture field to upstreams
       ALTER TABLE upstreams ADD hash_fallback_uri_capture text;
+
+      ALTER TABLE routes ADD atc text;
+      ALTER TABLE routes ADD priority int;
     ]],
     teardown = function(connector)
       local coordinator = assert(connector:get_stored_connection())

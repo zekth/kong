@@ -55,6 +55,7 @@ build = {
     ["kong.router"] = "kong/router/init.lua",
     ["kong.router.traditional"] = "kong/router/traditional.lua",
     ["kong.router.atc_compat"] = "kong/router/atc_compat.lua",
+    ["kong.router.atc"] = "kong/router/atc.lua",
     ["kong.reports"] = "kong/reports.lua",
     ["kong.constants"] = "kong/constants.lua",
     ["kong.concurrency"] = "kong/concurrency.lua",

@@ -42,9 +42,7 @@ function _M.new(routes, cache, cache_neg)
     }, _MT)
   end
 
-  if kong.configuration.router_flavor == "traditional_compatible" then
-    return atc_compat.new(routes)
-  end
+  return atc_compat.new(routes)
 end
 
 

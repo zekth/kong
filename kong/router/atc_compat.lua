@@ -379,7 +379,19 @@ function _M.new(routes)
     router.routes[r.route.id] = r.route
     router.services[r.route.id] = r.service
 
-    assert(inst:add_matcher(route_priority(r.route), r.route.id, get_atc(r.route)))
+    if kong.configuration.router_flavor == "traditional_compatible" then
+      assert(inst:add_matcher(route_priority(r.route), r.route.id, get_atc(r.route)))
+
+    else
+      local atc = r.route.atc
+
+      local gen = gen_for_field("net.protocol", "==", r.route.protocols)
+      if gen then
+        atc = atc .. " && " .. gen
+      end
+
+      assert(inst:add_matcher(r.route.priority, r.route.id, atc))
+    end
 
     router.fields = inst:get_fields()
   end
