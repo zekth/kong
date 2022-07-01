@@ -913,8 +913,8 @@ do
       read_timeout       = read_timeout    or 60000,
 
       -- stores info per try, metatable is needed for basic log serializer
-      -- see #6390
-      tries              = setmetatable({}, ARRAY_MT),
+      -- see #6390 (array of size 1 is the optimistic when we don't need to retry)
+      tries              = setmetatable(kong.table.new(1, 0), ARRAY_MT),
       -- ip              = nil,       -- final target IP address
       -- balancer        = nil,       -- the balancer object, if any
       -- hostname        = nil,       -- hostname of the final target IP
