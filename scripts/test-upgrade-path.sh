@@ -12,7 +12,7 @@ usage: $0 [-n] <from-version> <to-version>
 EOF
 }
 
-args=$(getopt n $*)
+args=$(getopt nmc $*)
 if [ $? -ne 0 ]
 then
     usage
@@ -24,6 +24,14 @@ while :; do
     case "$1" in
         -n)
             no_build=1
+            shift
+            ;;
+        -m)
+            use_master=1
+            shift
+            ;;
+        -c)
+            CASSANDRA=--cassandra
             shift
             ;;
         --)
@@ -41,15 +49,22 @@ then
 fi
 
 FROM_VERSION=$1
+FROM_TAG=$FROM_VERSION
 TO_VERSION=$2
-NETWORK_NAME=migration-$FROM_VERSION-$TO_VERSION
+if [ "$use_master" = "1" ]
+then
+    TO_TAG=master
+else
+    TO_TAG=$TO_VERSION
+fi
+NETWORK_NAME=migration-$FROM_TAG-$TO_TAG
 
 set -ex
 
 trap "echo exiting because of error" 0
 
-FROM_PREFIX=$(gojira prefix -t $FROM_VERSION)
-TO_PREFIX=$(gojira prefix -t $TO_VERSION)
+FROM_KONG_CONTAINER=$(gojira prefix -t $FROM_TAG)_kong_1
+TO_KONG_CONTAINER=$(gojira prefix -t $TO_TAG)_kong_1
 UPGRADE_TEST_DIR=/kong/spec/05-upgrade
 UPGRADE_TEST_FILE=upgrade-$FROM_VERSION-${TO_VERSION}_spec.lua
 
@@ -57,24 +72,24 @@ mkdir -p upgrade-test-log
 cd upgrade-test-log
 
 function build_containers() {
-    gojira up -t $FROM_VERSION --network $NETWORK_NAME > up-$FROM_VERSION.log 2>&1
-    gojira run -t $FROM_VERSION make dev > make-dev-$FROM_VERSION.log 2>&1
-    gojira up -t $TO_VERSION --alone --network $NETWORK_NAME > up-$TO_VERSION.log 2>&1
-    gojira run -t $TO_VERSION make dev > make-dev-$TO_VERSION.log 2>&1
+    gojira up -t $FROM_TAG --network $NETWORK_NAME $CASSANDRA > up-$FROM_TAG.log 2>&1
+    gojira run -t $FROM_TAG make dev > make-dev-$FROM_TAG.log 2>&1
+    gojira up -t $TO_TAG --alone --network $NETWORK_NAME > up-$TO_TAG.log 2>&1
+    gojira run -t $TO_TAG make dev > make-dev-$TO_TAG.log 2>&1
 }
 
 function run_tests() {
     # Copy upgrade test from target version every time we run the
     # tests as it may have been edited during development
-    docker cp ${TO_PREFIX}-kong-1:$UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE /tmp
-    docker cp /tmp/$UPGRADE_TEST_FILE ${FROM_PREFIX}-kong-1:/tmp
-    gojira run -t $FROM_VERSION kong migrations reset --yes
-    gojira run -t $FROM_VERSION kong migrations bootstrap
-    gojira run -t $TO_VERSION kong migrations up
-    gojira run -t $FROM_VERSION "bin/busted -v -t before /tmp/$UPGRADE_TEST_FILE"
-    gojira run -t $TO_VERSION "bin/busted -v -t migrating $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
-    gojira run -t $TO_VERSION kong migrations finish
-    gojira run -t $TO_VERSION "bin/busted -v -t after $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
+    docker cp ${TO_KONG_CONTAINER}:$UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE /tmp
+    docker cp /tmp/$UPGRADE_TEST_FILE ${FROM_KONG_CONTAINER}:/tmp
+    gojira run -t $FROM_TAG kong migrations reset --yes || true
+    gojira run -t $FROM_TAG kong migrations bootstrap
+    gojira run -t $TO_TAG kong migrations up
+    gojira run -t $FROM_TAG "bin/busted -v -t before /tmp/$UPGRADE_TEST_FILE"
+    gojira run -t $TO_TAG "bin/busted -v -t migrating $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
+    gojira run -t $TO_TAG kong migrations finish
+    gojira run -t $TO_TAG "bin/busted -v -t after $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
 }
 
 if [ -z "$no_build" ]
