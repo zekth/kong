@@ -12,6 +12,8 @@ usage: $0 [-n] <from-version> <to-version>
 EOF
 }
 
+DATABASE=postgres
+
 args=$(getopt nmcb: $*)
 if [ $? -ne 0 ]
 then
@@ -36,7 +38,7 @@ while :; do
             shift
             ;;
         -c)
-            CASSANDRA=--cassandra
+            DATABASE=cassandra
             shift
             ;;
         --)
@@ -68,13 +70,15 @@ TO_KONG_CONTAINER=$(gojira prefix -t $TO_TAG)_kong_1
 UPGRADE_TEST_DIR=/kong/spec/05-upgrade
 UPGRADE_TEST_FILE=upgrade-$FROM_VERSION-${TO_VERSION}_spec.lua
 
+BUSTED="env KONG_TEST_PG_DATABASE=kong bin/busted"
+
 mkdir -p upgrade-test-log
 cd upgrade-test-log
 
 function build_containers() {
-    gojira up -t $FROM_TAG --network $NETWORK_NAME $CASSANDRA > up-$FROM_TAG.log 2>&1
+    gojira up -t $FROM_TAG --network $NETWORK_NAME --$DATABASE > up-$FROM_TAG.log 2>&1
     gojira run -t $FROM_TAG make dev > make-dev-$FROM_TAG.log 2>&1
-    gojira up -t $TO_TAG --alone --network $NETWORK_NAME $CASSANDRA > up-$TO_TAG.log 2>&1
+    gojira up -t $TO_TAG --alone --network $NETWORK_NAME --$DATABASE > up-$TO_TAG.log 2>&1
     gojira run -t $TO_TAG make dev > make-dev-$TO_TAG.log 2>&1
 }
 
@@ -86,10 +90,10 @@ function run_tests() {
     gojira run -t $FROM_TAG kong migrations reset --yes || true
     gojira run -t $FROM_TAG kong migrations bootstrap
     gojira run -t $TO_TAG kong migrations up
-    gojira run -t $FROM_TAG "bin/busted -v -t before /tmp/$UPGRADE_TEST_FILE"
-    gojira run -t $TO_TAG "bin/busted -v -t migrating $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
+    gojira run -t $FROM_TAG "$BUSTED -t before /tmp/$UPGRADE_TEST_FILE"
+    gojira run -t $TO_TAG "$BUSTED -t migrating $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
     gojira run -t $TO_TAG kong migrations finish
-    gojira run -t $TO_TAG "bin/busted -v -t after $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
+    gojira run -t $TO_TAG "$BUSTED -t after $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
 }
 
 if [ -z "$no_build" ]
