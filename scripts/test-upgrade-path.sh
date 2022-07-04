@@ -12,7 +12,7 @@ usage: $0 [-n] <from-version> <to-version>
 EOF
 }
 
-args=$(getopt nmc $*)
+args=$(getopt nmcb: $*)
 if [ $? -ne 0 ]
 then
     usage
@@ -27,7 +27,12 @@ while :; do
             shift
             ;;
         -m)
-            use_master=1
+            branch=master
+            shift
+            ;;
+        -b)
+            branch=$2
+            shift
             shift
             ;;
         -c)
@@ -51,12 +56,7 @@ fi
 FROM_VERSION=$1
 FROM_TAG=$FROM_VERSION
 TO_VERSION=$2
-if [ "$use_master" = "1" ]
-then
-    TO_TAG=master
-else
-    TO_TAG=$TO_VERSION
-fi
+TO_TAG=${branch:-$TO_VERSION}
 NETWORK_NAME=migration-$FROM_TAG-$TO_TAG
 
 set -ex
@@ -74,7 +74,7 @@ cd upgrade-test-log
 function build_containers() {
     gojira up -t $FROM_TAG --network $NETWORK_NAME $CASSANDRA > up-$FROM_TAG.log 2>&1
     gojira run -t $FROM_TAG make dev > make-dev-$FROM_TAG.log 2>&1
-    gojira up -t $TO_TAG --alone --network $NETWORK_NAME > up-$TO_TAG.log 2>&1
+    gojira up -t $TO_TAG --alone --network $NETWORK_NAME $CASSANDRA > up-$TO_TAG.log 2>&1
     gojira run -t $TO_TAG make dev > make-dev-$TO_TAG.log 2>&1
 }
 
