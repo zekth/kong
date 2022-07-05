@@ -14,7 +14,7 @@ EOF
 
 DATABASE=postgres
 
-args=$(getopt nmcb: $*)
+args=$(getopt nmd:b: $*)
 if [ $? -ne 0 ]
 then
     usage
@@ -37,8 +37,9 @@ while :; do
             shift
             shift
             ;;
-        -c)
-            DATABASE=cassandra
+        -d)
+            DATABASE=$2
+            shift
             shift
             ;;
         --)
