@@ -68,8 +68,9 @@ trap "echo exiting because of error" 0
 
 FROM_KONG_CONTAINER=$(gojira prefix -t $FROM_TAG)_kong_1
 TO_KONG_CONTAINER=$(gojira prefix -t $TO_TAG)_kong_1
-UPGRADE_TEST_DIR=/kong/spec/05-upgrade
-UPGRADE_TEST_FILE=upgrade-$FROM_VERSION-${TO_VERSION}_spec.lua
+TEST_DIR=spec
+UPGRADE_TEST=spec/05-upgrade/upgrade-$FROM_VERSION-${TO_VERSION}_spec.lua
+TEST_TAR=/tmp/upgrade-test-$$.tar
 
 BUSTED="env KONG_TEST_PG_DATABASE=kong bin/busted"
 
@@ -86,15 +87,18 @@ function build_containers() {
 function run_tests() {
     # Copy upgrade test from target version every time we run the
     # tests as it may have been edited during development
-    docker cp ${TO_KONG_CONTAINER}:$UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE /tmp
-    docker cp /tmp/$UPGRADE_TEST_FILE ${FROM_KONG_CONTAINER}:/tmp
+    docker exec ${TO_KONG_CONTAINER} tar cf $TEST_TAR $TEST_DIR
+    docker cp ${TO_KONG_CONTAINER}:$TEST_TAR $TEST_TAR
+    docker cp $TEST_TAR ${FROM_KONG_CONTAINER}:$TEST_TAR
+    docker exec ${FROM_KONG_CONTAINER} tar xf $TEST_TAR
+    rm $TEST_TAR
     gojira run -t $FROM_TAG kong migrations reset --yes || true
     gojira run -t $FROM_TAG kong migrations bootstrap
     gojira run -t $TO_TAG kong migrations up
-    gojira run -t $FROM_TAG "$BUSTED -t before /tmp/$UPGRADE_TEST_FILE"
-    gojira run -t $TO_TAG "$BUSTED -t migrating $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
+    gojira run -t $FROM_TAG "$BUSTED -t before $UPGRADE_TEST"
+    gojira run -t $TO_TAG "$BUSTED -t migrating $UPGRADE_TEST"
     gojira run -t $TO_TAG kong migrations finish
-    gojira run -t $TO_TAG "$BUSTED -t after $UPGRADE_TEST_DIR/$UPGRADE_TEST_FILE"
+    gojira run -t $TO_TAG "$BUSTED -t after $UPGRADE_TEST"
 }
 
 if [ -z "$no_build" ]
