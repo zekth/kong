@@ -68,7 +68,7 @@ trap "echo exiting because of error" 0
 
 FROM_KONG_CONTAINER=$(gojira prefix -t $FROM_TAG)_kong_1
 TO_KONG_CONTAINER=$(gojira prefix -t $TO_TAG)_kong_1
-TEST_DIR=spec
+TEST_DIR=spec/05-upgrade
 UPGRADE_TEST=spec/05-upgrade/upgrade-$FROM_VERSION-${TO_VERSION}_spec.lua
 TEST_TAR=/tmp/upgrade-test-$$.tar
 
@@ -94,11 +94,12 @@ function run_tests() {
     rm $TEST_TAR
     gojira run -t $FROM_TAG kong migrations reset --yes || true
     gojira run -t $FROM_TAG kong migrations bootstrap
+    gojira run -t $FROM_TAG "$BUSTED -t old_before $UPGRADE_TEST"
     gojira run -t $TO_TAG kong migrations up
-    gojira run -t $FROM_TAG "$BUSTED -t before $UPGRADE_TEST"
-    gojira run -t $TO_TAG "$BUSTED -t migrating $UPGRADE_TEST"
+    gojira run -t $FROM_TAG "$BUSTED -t old_after_up $UPGRADE_TEST"
+    gojira run -t $TO_TAG "$BUSTED -t new_after_up $UPGRADE_TEST"
     gojira run -t $TO_TAG kong migrations finish
-    gojira run -t $TO_TAG "$BUSTED -t after $UPGRADE_TEST"
+    gojira run -t $TO_TAG "$BUSTED -t new_after_finish $UPGRADE_TEST"
 }
 
 if [ -z "$no_build" ]
