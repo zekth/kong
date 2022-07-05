@@ -7,28 +7,30 @@ local context = require("resty.router.context")
 local constants = require("kong.constants")
 local bit = require("bit")
 local ffi = require("ffi")
-
-
-local ngx = ngx
-local tb_clear = require("table.clear")
-local tb_concat = table.concat
-local tb_insert = table.insert
-local tb_nkeys = require("table.nkeys")
-local re_find = ngx.re.find
-local re_match = ngx.re.match
-local get_method = ngx.req.get_method
 local server_name = require("ngx.ssl").server_name
 local normalize = require("kong.tools.uri").normalize
 local hostname_type = require("kong.tools.utils").hostname_type
+local tb_clear = require("table.clear")
+local tb_nkeys = require("table.nkeys")
+local split_port = require("kong.router.traditional").split_port
+
+
+local ngx = ngx
+local tb_concat = table.concat
+local tb_insert = table.insert
+local re_find = ngx.re.find
+local re_match = ngx.re.match
+local get_method = ngx.req.get_method
 local find = string.find
 local lower = string.lower
 local upper = string.upper
 local byte = string.byte
 local sub = string.sub
+local ipairs = ipairs
+local type = type
 local tonumber = tonumber
 local ffi_new = ffi.new
 local max = math.max
-local split_port = require("kong.router.traditional").split_port
 local bor, band, lshift, rshift = bit.bor, bit.band, bit.lshift, bit.rshift
 local header        = ngx.header
 local var           = ngx.var
@@ -41,6 +43,12 @@ local is_http = ngx.config.subsystem == "http"
 
 
 local SLASH         = byte("/")
+local MAX_HEADER_COUNT = 255
+
+
+local function is_regex_magic(path)
+  return re_find(path, [[[a-zA-Z0-9\.\-_~/%]*$]], "ajo")
+end
 
 
 function _M._set_ngx(mock_ngx)
@@ -237,7 +245,7 @@ local function get_atc(route)
   end
 
   local gen = gen_for_field("http.path", function(path)
-    return re_find(path, [[[a-zA-Z0-9\.\-_~/%]*$]], "ajo") and OP_PREFIX or OP_REGEX
+    return is_regex_magic(path) and OP_PREFIX or OP_REGEX
   end, route.paths, function(op, p)
     if op == OP_REGEX then
       return normalize_regex(p):gsub("\\", "\\\\")
@@ -310,10 +318,10 @@ local function route_priority(r)
     match_weight = match_weight + 1
   end
 
-  if headers_count > 255 then
+  if headers_count > MAX_HEADER_COUNT then
     ngx_log(ngx_WARN, "too many headers in route ", r.id,
                       " headers count capped at 255 when sorting")
-    headers_count = 255
+    headers_count = MAX_HEADER_COUNT
   end
 
   if r.snis and #r.snis > 0 then
@@ -336,7 +344,7 @@ local function route_priority(r)
 
   if r.paths then
     for _, p in ipairs(r.paths) do
-      if re_find(p, [[[a-zA-Z0-9\.\-_~/%]*$]], "ajo") then
+      if is_regex_magic(path) then
         -- plain URI or URI prefix
         max_uri_length = max(max_uri_length, #p)
 
@@ -392,12 +400,12 @@ function _M.new(routes)
     router.services[route_id] = r.service
 
     if kong.configuration.router_flavor == "traditional_compatible" then
-      assert(inst:add_matcher(route_priority(r.route), r.route.id, get_atc(r.route)))
+      assert(inst:add_matcher(route_priority(r.route), route_id, get_atc(r.route)))
 
     else
       local atc = r.route.atc
 
-      local gen = gen_for_field("net.protocol", "==", r.route.protocols)
+      local gen = gen_for_field("net.protocol", OP_EQUAL, r.route.protocols)
       if gen then
         atc = atc .. " && " .. gen
       end
