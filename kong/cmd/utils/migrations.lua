@@ -1,3 +1,5 @@
+local cjson = require "cjson"
+
 local log = require "kong.cmd.utils.log"
 
 
@@ -208,11 +210,21 @@ local function reset(schema_state, db, ttl)
 end
 
 
+local function migration_tests(new_migrations)
+   for _, module in ipairs(new_migrations) do
+      for i, migration in ipairs(module['migrations']) do
+         print(module.namespace:gsub("[.]", "/") .. "/" .. migration.name .. "_test.lua")
+      end
+   end
+end
+
+
 return {
   up = up,
   reset = reset,
   finish = finish,
   bootstrap = bootstrap,
   check_state = check_state,
+  migration_tests = migration_tests,
   NEEDS_BOOTSTRAP_MSG = NEEDS_BOOTSTRAP_MSG,
 }

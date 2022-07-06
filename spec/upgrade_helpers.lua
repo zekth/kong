@@ -1,6 +1,7 @@
 local say = require "say"
 local assert = require "luassert"
 
+local helpers = require "spec.helpers"
 local conf_loader = require "kong.conf_loader"
 local DB = require "kong.db"
 
@@ -46,3 +47,23 @@ end
 say:set("assertion.table_has_column.positive", "Expected table %s to have column %s with type %s")
 say:set("assertion.table_has_column.negative", "Expected table %s not to have column %s with type %s")
 assert:register("assertion", "table_has_column", table_has_column, "assertion.table_has_column.positive", "assertion.table_has_column.negative")
+
+local function proxy_client()
+   return helpers.http_client({
+         host = os.getenv("TARGET_HOST"),
+         port = 8000,
+         timeout = 60000})
+end
+
+local function admin_client()
+   print("admin talking to " .. os.getenv("TARGET_HOST") .. ":" .. 8001)
+   return helpers.http_client({
+         host = os.getenv("TARGET_HOST"),
+         port = 8001,
+         timeout = 60000})
+end
+
+return {
+   admin_client = admin_client,
+   proxy_client = proxy_client
+}

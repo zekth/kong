@@ -6,6 +6,7 @@ local conf_loader = require "kong.conf_loader"
 local kong_global = require "kong.global"
 local prefix_handler = require "kong.cmd.utils.prefix_handler"
 local migrations_utils = require "kong.cmd.utils.migrations"
+local cjson = require "cjson"
 
 
 local lapp = [[
@@ -25,6 +26,8 @@ The available commands are:
   list                              List executed migrations.
 
   reset                             Reset the database. The `reset` command erases all of the data in Kong's database and deletes all of the schemas.
+
+  dump                              Dump the current migration state to stdout in json format.
 
 Options:
  -y,--yes                           Assume "yes" to prompts and run
@@ -154,6 +157,16 @@ local function execute(args)
 
     -- exit(0)
 
+  elseif args.command == "tests" then
+
+     local new_migrations = schema_state.new_migrations
+     if new_migrations then
+        migrations_utils.migration_tests(new_migrations)
+     else
+        log("No migrations pending")
+        os.exit(1)
+     end
+
   elseif args.command == "bootstrap" then
     if args.force then
       migrations_utils.reset(schema_state, db, args.lock_timeout)
@@ -208,5 +221,6 @@ return {
     finish = true,
     list = true,
     reset = true,
+    tests = true
   }
 }
