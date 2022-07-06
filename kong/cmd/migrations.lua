@@ -6,7 +6,6 @@ local conf_loader = require "kong.conf_loader"
 local kong_global = require "kong.global"
 local prefix_handler = require "kong.cmd.utils.prefix_handler"
 local migrations_utils = require "kong.cmd.utils.migrations"
-local cjson = require "cjson"
 
 
 local lapp = [[
@@ -27,7 +26,7 @@ The available commands are:
 
   reset                             Reset the database. The `reset` command erases all of the data in Kong's database and deletes all of the schemas.
 
-  dump                              Dump the current migration state to stdout in json format.
+  tests                             Lists the tests that apply to the outstanding `up` step.
 
 Options:
  -y,--yes                           Assume "yes" to prompts and run
