@@ -25,13 +25,18 @@ jobs:
         path: ${{ env.INSTALL_ROOT }}
         key: ${{ hashFiles('.ci/setup_env_github.sh') }}-${{ hashFiles('.github/workflows/build_and_test.yml') }}-${{ hashFiles('.requirements') }}-${{ hashFiles('kong-*.rockspec') }}-${{ hashFiles('Makefile') }}
 
+    - uses: actions-rs/toolchain@v1
+      if: steps.cache-deps.outputs.cache-hit != 'true'
+      with:
+        toolchain: stable
+
     - name: Checkout kong-build-tools
       if: steps.cache-deps.outputs.cache-hit != 'true'
       uses: actions/checkout@v3
       with:
         repository: Kong/kong-build-tools
         path: kong-build-tools
-        ref: master
+        ref: feat/atc_router_build
 
     - name: Checkout go-pluginserver
       if: steps.cache-deps.outputs.cache-hit != 'true'
