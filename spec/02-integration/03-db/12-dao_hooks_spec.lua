@@ -4,7 +4,7 @@ local hooks = require "kong.hooks"
 
 for _, strategy in helpers.each_strategy() do
   describe("kong.db hooks [#" .. strategy .. "]", function()
-    local db, bp, s1, r1
+    local db, bp, s1, s2, r1
 
     lazy_setup(function()
       bp, db = helpers.get_db_utils(strategy, {
@@ -15,6 +15,11 @@ for _, strategy in helpers.each_strategy() do
       s1 = bp.services:insert {
         name = "s1",
         url = "http://example.test",
+      }
+
+      s2 = bp.services:insert {
+        name = "s2",
+        url = "http://example.test/2",
       }
 
       r1 = bp.routes:insert {
@@ -183,7 +188,7 @@ for _, strategy in helpers.each_strategy() do
           hooks.clear_hooks()
         end)
 
-        assert(db.routes:select( {id = r1.id} ))
+        assert(db.routes:select({ id = r1.id }))
         assert.spy(pre_hook).was_called(1)
         assert.spy(post_hook).was_called(1)
       end)
@@ -277,8 +282,8 @@ for _, strategy in helpers.each_strategy() do
       end)
     end)
 
-    describe("concurrent delete", function ()
-      local post_hook = spy.new(function () end)
+    describe("concurrent delete", function()
+      local post_hook = spy.new(function() end)
 
       lazy_setup(function()
         hooks.register_hook("dao:delete:post", function()
@@ -294,15 +299,15 @@ for _, strategy in helpers.each_strategy() do
 
         local co = {}
         for c = 1, 10 do
-          co[c] = coroutine.create(function ()
-            db.service:delete({ id = s2.id })
+          co[c] = coroutine.create(function()
+            db.services:delete({ id = s2.id })
           end)
         end
 
         for c = 1, 10 do
           coroutine.resume(co[c])
         end
-    
+
         assert.spy(post_hook).was_called(1)
       end)
     end)
