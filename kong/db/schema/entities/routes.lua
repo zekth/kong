@@ -1,7 +1,6 @@
 local typedefs = require("kong.db.schema.typedefs")
 local atc = require("kong.router.atc")
 local router = require("resty.router.router")
-local null = ngx.null
 
 
 if kong.configuration.router_flavor == "atc" then

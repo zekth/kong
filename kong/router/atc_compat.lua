@@ -10,19 +10,14 @@ local ffi = require("ffi")
 local server_name = require("ngx.ssl").server_name
 local normalize = require("kong.tools.uri").normalize
 local hostname_type = require("kong.tools.utils").hostname_type
-local tb_clear = require("table.clear")
 local tb_nkeys = require("table.nkeys")
-local split_port = require("kong.router.traditional").split_port
 
 
 local ngx = ngx
 local tb_concat = table.concat
 local tb_insert = table.insert
 local re_find = ngx.re.find
-local re_match = ngx.re.match
-local get_method = ngx.req.get_method
 local find = string.find
-local lower = string.lower
 local upper = string.upper
 local byte = string.byte
 local sub = string.sub
@@ -31,19 +26,19 @@ local type = type
 local tonumber = tonumber
 local ffi_new = ffi.new
 local max = math.max
-local bor, band, lshift, rshift = bit.bor, bit.band, bit.lshift, bit.rshift
+local bor, band, lshift = bit.bor, bit.band, bit.lshift
 local header        = ngx.header
 local var           = ngx.var
 local ngx_log       = ngx.log
-local ERR           = ngx.ERR
 local get_method    = ngx.req.get_method
 local get_headers   = ngx.req.get_headers
-local is_http = ngx.config.subsystem == "http"
+local ngx_WARN = ngx.WARN
 
 
 
 local SLASH         = byte("/")
 local MAX_HEADER_COUNT = 255
+local MAX_REQ_HEADERS = 100
 
 
 local function is_regex_magic(path)
@@ -68,9 +63,9 @@ function _M._set_ngx(mock_ngx)
     ngx_log = mock_ngx.log
   end
 
-  if mock_ngx.ERR then
-    ERR = mock_ngx.ERR
-  end
+  --if mock_ngx.ERR then
+  --  ngx_ERR = mock_ngx.ERR
+  --end
 
   if type(mock_ngx.req) == "table" then
     if mock_ngx.req.get_method then
@@ -82,16 +77,16 @@ function _M._set_ngx(mock_ngx)
     end
   end
 
-  if type(mock_ngx.config) == "table" then
-    if mock_ngx.config.subsystem then
-      is_http = mock_ngx.config.subsystem == "http"
-    end
-  end
+  --if type(mock_ngx.config) == "table" then
+  --  if mock_ngx.config.subsystem then
+  --    is_http = mock_ngx.config.subsystem == "http"
+  --  end
+  --end
 
   if type(mock_ngx.re) == "table" then
-    if mock_ngx.re.match then
-      re_match = mock_ngx.re.match
-    end
+    --if mock_ngx.re.match then
+    --  re_match = mock_ngx.re.match
+    --end
 
     if mock_ngx.re.find then
       re_find = mock_ngx.re.find
@@ -200,7 +195,6 @@ local OP_REGEX = "~"
 
 local function get_atc(route)
   local out = {}
-  local out_n = 0
 
   local gen = gen_for_field("net.protocol", OP_EQUAL, route.protocols)
   if gen then
@@ -344,7 +338,7 @@ local function route_priority(r)
 
   if r.paths then
     for _, p in ipairs(r.paths) do
-      if is_regex_magic(path) then
+      if is_regex_magic(p) then
         -- plain URI or URI prefix
         max_uri_length = max(max_uri_length, #p)
 
@@ -442,8 +436,8 @@ end
 
 
 function _M:select(req_method, req_uri, req_host, req_scheme,
-                   _src_ip, _src_port,
-                   _dst_ip, _dst_port,
+                   src_ip, src_port,
+                   dst_ip, dst_port,
                    sni, req_headers)
   if req_method and type(req_method) ~= "string" then
     error("method must be a string", 2)
@@ -457,16 +451,16 @@ function _M:select(req_method, req_uri, req_host, req_scheme,
   if req_scheme and type(req_scheme) ~= "string" then
     error("scheme must be a string", 2)
   end
-  if _src_ip and type(_src_ip) ~= "string" then
+  if src_ip and type(src_ip) ~= "string" then
     error("src_ip must be a string", 2)
   end
-  if _src_port and type(_src_port) ~= "number" then
+  if src_port and type(src_port) ~= "number" then
     error("src_port must be a number", 2)
   end
-  if _dst_ip and type(_dst_ip) ~= "string" then
+  if dst_ip and type(dst_ip) ~= "string" then
     error("dst_ip must be a string", 2)
   end
-  if _dst_port and type(_dst_port) ~= "number" then
+  if dst_port and type(dst_port) ~= "number" then
     error("dst_port must be a number", 2)
   end
   if sni and type(sni) ~= "string" then
@@ -635,8 +629,8 @@ function _M:exec(ctx)
 
   local headers, err = get_headers(MAX_REQ_HEADERS)
   if err == "truncated" then
-    log(WARN, "retrieved ", MAX_REQ_HEADERS, " headers for evaluation ",
-              "(max) but request had more; other headers will be ignored")
+    ngx_log(ngx_WARN, "retrieved ", MAX_REQ_HEADERS, " headers for evaluation ",
+                  "(max) but request had more; other headers will be ignored")
   end
 
   headers["host"] = nil
