@@ -3,7 +3,7 @@ local atc = require("kong.router.atc")
 local router = require("resty.router.router")
 
 
-if kong.configuration.router_flavor == "atc" then
+if kong and kong.configuration and kong.configuration.router_flavor == "atc" then
   return {
     name         = "routes",
     primary_key  = { "id" },
