@@ -1,7 +1,7 @@
 local _M = {}
 local _MT = { __index = _M, }
 
-local schema = require("resty.router.schema")
+local atc = require("kong.router.atc")
 local router = require("resty.router.router")
 local context = require("resty.router.context")
 local constants = require("kong.constants")
@@ -21,9 +21,11 @@ local find = string.find
 local upper = string.upper
 local byte = string.byte
 local sub = string.sub
+local setmetatable = setmetatable
 local ipairs = ipairs
 local type = type
 local tonumber = tonumber
+local get_schema = atc.get_schema
 local ffi_new = ffi.new
 local max = math.max
 local bor, band, lshift = bit.bor, bit.band, bit.lshift
@@ -369,15 +371,7 @@ function _M.new(routes)
     return error("expected arg #1 routes to be a table")
   end
 
-  local s = schema.new()
-  s:add_field("net.protocol", "String")
-  s:add_field("tls.sni", "String")
-  s:add_field("http.method", "String")
-  s:add_field("http.host", "String")
-  s:add_field("http.path", "String")
-  s:add_field("http.raw_path", "String")
-  s:add_field("http.headers.*", "String")
-
+  local s = get_schema()
   local inst = router.new(s)
 
   local router = setmetatable({
@@ -389,22 +383,23 @@ function _M.new(routes)
   }, _MT)
 
   for _, r in ipairs(routes) do
-    local route_id = r.route.id
-    router.routes[route_id] = r.route
+    local route = r.route
+    local route_id = route.id
+    router.routes[route_id] = route
     router.services[route_id] = r.service
 
     if kong.configuration.router_flavor == "traditional_compatible" then
-      assert(inst:add_matcher(route_priority(r.route), route_id, get_atc(r.route)))
+      assert(inst:add_matcher(route_priority(route), route_id, get_atc(route)))
 
     else
-      local atc = r.route.atc
+      local atc = route.atc
 
-      local gen = gen_for_field("net.protocol", OP_EQUAL, r.route.protocols)
+      local gen = gen_for_field("net.protocol", OP_EQUAL, route.protocols)
       if gen then
         atc = atc .. " && " .. gen
       end
 
-      assert(inst:add_matcher(r.route.priority, r.route.id, atc))
+      assert(inst:add_matcher(route.priority, route_id, atc))
     end
 
     router.fields = inst:get_fields()
@@ -553,6 +548,7 @@ function _M:select(req_method, req_uri, req_host, req_scheme,
   request_postfix = sanitize_uri_postfix(request_postfix) or ""
   local upstream_base = service_path or "/"
 
+  -- TODO: refactor and share with old router
   if byte(upstream_base, -1) == SLASH then
     -- ends with / and strip_path = true
     if matched_route.strip_path then
