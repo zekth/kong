@@ -28,15 +28,6 @@ while :; do
             no_build=1
             shift
             ;;
-        -m)
-            branch=master
-            shift
-            ;;
-        -b)
-            branch=$2
-            shift
-            shift
-            ;;
         -d)
             DATABASE=$2
             shift
@@ -57,59 +48,54 @@ then
 fi
 
 OLD_VERSION=$1
-OLD_TAG=$OLD_VERSION
 NEW_VERSION=$2
-NEW_TAG=${branch:-$NEW_VERSION}
-NETWORK_NAME=migration-$OLD_TAG-$NEW_TAG
+NETWORK_NAME=migration-$OLD_VERSION-$NEW_VERSION
 
 set -ex
 
 trap "echo exiting because of error" 0
 
-OLD_CONTAINER=$(gojira prefix -t $OLD_TAG)_kong_1
-NEW_CONTAINER=$(gojira prefix -t $NEW_TAG)_kong_1
+OLD_CONTAINER=$(gojira prefix -t $OLD_VERSION)_kong_1
+NEW_CONTAINER=$(gojira prefix -t $NEW_VERSION)_kong_1
 
 mkdir -p upgrade-test-log
 cd upgrade-test-log
 
 function build_containers() {
-    gojira up -t $OLD_TAG --network $NETWORK_NAME --$DATABASE > up-$OLD_TAG.log 2>&1
-    gojira run -t $OLD_TAG make dev > make-dev-$OLD_TAG.log 2>&1
-    gojira up -t $NEW_TAG --alone --network $NETWORK_NAME --$DATABASE > up-$NEW_TAG.log 2>&1
-    gojira run -t $NEW_TAG make dev > make-dev-$NEW_TAG.log 2>&1
+    gojira up -t $OLD_VERSION --network $NETWORK_NAME --$DATABASE > up-$OLD_VERSION.log 2>&1
+    gojira run -t $OLD_VERSION make dev > make-dev-$OLD_VERSION.log 2>&1
+    gojira up -t $NEW_VERSION --alone --network $NETWORK_NAME --$DATABASE > up-$NEW_VERSION.log 2>&1
+    gojira run -t $NEW_VERSION make dev > make-dev-$NEW_VERSION.log 2>&1
 }
 
 function run_tests() {
-    # Copy upgrade test from target version every time we run the
-    # tests as it may have been edited during development
-
-    gojira run -t $OLD_TAG kong migrations reset --yes || true
-    gojira run -t $OLD_TAG kong migrations bootstrap
-    TESTS=$(gojira run -t $NEW_TAG kong migrations tests)
+    gojira run -t $OLD_VERSION kong migrations reset --yes || true
+    gojira run -t $OLD_VERSION kong migrations bootstrap
+    TESTS=$(gojira run -t $NEW_VERSION kong migrations tests)
 
     BUSTED="env KONG_TEST_PG_DATABASE=kong TARGET_HOST=${OLD_CONTAINER} bin/busted"
 
-    gojira run -t $OLD_TAG kong restart
-    gojira run -t $NEW_TAG "$BUSTED -t old_before $TESTS"
-    gojira run -t $OLD_TAG kong stop
+    gojira run -t $OLD_VERSION kong restart
+    gojira run -t $NEW_VERSION "$BUSTED -t old_before $TESTS"
+    gojira run -t $OLD_VERSION kong stop
 
-    gojira run -t $NEW_TAG kong migrations up
+    gojira run -t $NEW_VERSION kong migrations up
 
-    gojira run -t $OLD_TAG kong restart
-    gojira run -t $NEW_TAG "$BUSTED -t old_after_up $TESTS"
-    gojira run -t $OLD_TAG kong stop
+    gojira run -t $OLD_VERSION kong restart
+    gojira run -t $NEW_VERSION "$BUSTED -t old_after_up $TESTS"
+    gojira run -t $OLD_VERSION kong stop
 
     BUSTED="env KONG_TEST_PG_DATABASE=kong TARGET_HOST=${NEW_CONTAINER} bin/busted"
 
-    gojira run -t $NEW_TAG kong start
-    gojira run -t $NEW_TAG "$BUSTED -t new_after_up $TESTS"
-    gojira run -t $NEW_TAG kong stop
+    gojira run -t $NEW_VERSION kong start
+    gojira run -t $NEW_VERSION "$BUSTED -t new_after_up $TESTS"
+    gojira run -t $NEW_VERSION kong stop
 
-    gojira run -t $NEW_TAG kong migrations finish
+    gojira run -t $NEW_VERSION kong migrations finish
 
-    gojira run -t $NEW_TAG kong start
-    gojira run -t $NEW_TAG "$BUSTED -t new_after_finish $TESTS"
-    gojira run -t $NEW_TAG kong stop
+    gojira run -t $NEW_VERSION kong start
+    gojira run -t $NEW_VERSION "$BUSTED -t new_after_finish $TESTS"
+    gojira run -t $NEW_VERSION kong stop
 }
 
 if [ -z "$no_build" ]
