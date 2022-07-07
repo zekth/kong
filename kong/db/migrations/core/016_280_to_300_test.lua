@@ -1,6 +1,7 @@
 local cjson = require "cjson"
 local inspect = require "inspect"
 
+local helpers = require "spec/helpers"
 local upgrade_helpers = require "spec/upgrade_helpers"
 
 local HEADERS = { ["Content-Type"] = "application/json" }
@@ -17,10 +18,13 @@ end)
 
 describe("vault related data migration", function()
 
+            lazy_setup(helpers.start_kong)
+            lazy_teardown(helpers.stop_kong)
+
             local admin_client
 
             before_each(function()
-                  admin_client = upgrade_helpers.admin_client()
+                  admin_client = helpers.admin_client()
             end)
 
             after_each(function()

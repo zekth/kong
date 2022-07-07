@@ -1,20 +1,22 @@
 #!/bin/sh
 
 function usage() {
-    cat <<EOF
+    cat 1>&2 <<EOF
 usage: $0 [-n] <from-version> <to-version>
 
  <from-version> and <to-version> need to be git versions
 
  Options:
-   -n do not build containers, just run the tests
+   -n                     just run the tests, don't build containers (they need to already exist)
+   -i                     proceed even if not all migrations have tests
+   -d postgres|cassandra  select database type
 
 EOF
 }
 
 DATABASE=postgres
 
-args=$(getopt nmd:b: $*)
+args=$(getopt nd:i $*)
 if [ $? -ne 0 ]
 then
     usage
@@ -25,7 +27,7 @@ set -- $args
 while :; do
     case "$1" in
         -n)
-            no_build=1
+            NO_BUILD=1
             shift
             ;;
         -d)
@@ -33,9 +35,17 @@ while :; do
             shift
             shift
             ;;
+        -i)
+            IGNORE_MISSING_TESTS=1
+            shift
+            ;;
         --)
             shift
             break
+            ;;
+        *)
+            usage
+            exit 1
             ;;
     esac
 done
@@ -69,36 +79,37 @@ function build_containers() {
 }
 
 function run_tests() {
+    # Initialize database
     gojira run -t $OLD_VERSION kong migrations reset --yes || true
     gojira run -t $OLD_VERSION kong migrations bootstrap
+
+    # Prepare list of tests to run
     TESTS=$(gojira run -t $NEW_VERSION kong migrations tests)
+    if [ "$IGNORE_MISSING_TESTS" = "1" ]
+    then
+        TESTS=$(gojira run -t $NEW_VERSION "ls 2>/dev/null $TESTS || true")
+    fi
 
-    BUSTED="env KONG_TEST_PG_DATABASE=kong TARGET_HOST=${OLD_CONTAINER} bin/busted"
+    # Make tests available in OLD container
+    TESTS_TAR=/tmp/upgrade-tests-$$.tar
+    docker exec ${NEW_CONTAINER} tar cf ${TESTS_TAR} spec/upgrade_helpers.lua $TESTS
+    docker cp ${NEW_CONTAINER}:${TESTS_TAR} ${TESTS_TAR}
+    docker cp ${TESTS_TAR} ${OLD_CONTAINER}:${TESTS_TAR}
+    docker exec ${OLD_CONTAINER} tar xf ${TESTS_TAR}
+    rm ${TESTS_TAR}
 
-    gojira run -t $OLD_VERSION kong restart
-    gojira run -t $NEW_VERSION "$BUSTED -t old_before $TESTS"
-    gojira run -t $OLD_VERSION kong stop
+    # Run the tests
+    BUSTED="env KONG_TEST_PG_DATABASE=kong bin/busted"
 
+    gojira run -t $OLD_VERSION "$BUSTED -t old_before $TESTS"
     gojira run -t $NEW_VERSION kong migrations up
-
-    gojira run -t $OLD_VERSION kong restart
-    gojira run -t $NEW_VERSION "$BUSTED -t old_after_up $TESTS"
-    gojira run -t $OLD_VERSION kong stop
-
-    BUSTED="env KONG_TEST_PG_DATABASE=kong TARGET_HOST=${NEW_CONTAINER} bin/busted"
-
-    gojira run -t $NEW_VERSION kong start
+    gojira run -t $OLD_VERSION "$BUSTED -t old_after_up $TESTS"
     gojira run -t $NEW_VERSION "$BUSTED -t new_after_up $TESTS"
-    gojira run -t $NEW_VERSION kong stop
-
     gojira run -t $NEW_VERSION kong migrations finish
-
-    gojira run -t $NEW_VERSION kong start
     gojira run -t $NEW_VERSION "$BUSTED -t new_after_finish $TESTS"
-    gojira run -t $NEW_VERSION kong stop
 }
 
-if [ -z "$no_build" ]
+if [ -z "$NO_BUILD" ]
 then
     build_containers
 fi
