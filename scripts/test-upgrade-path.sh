@@ -2,7 +2,7 @@
 
 function usage() {
     cat 1>&2 <<EOF
-usage: $0 [-n] <from-version> <to-version>
+usage: $0 [-n] <from-version> <to-version> [ <test> ... ]
 
  <from-version> and <to-version> need to be git versions
 
@@ -50,7 +50,7 @@ while :; do
     esac
 done
 
-if [ $# -ne 2 ]
+if [ $# -lt 2 ]
 then
     echo "Missing <from-version> or <to-version>"
     usage
@@ -59,6 +59,9 @@ fi
 
 OLD_VERSION=$1
 NEW_VERSION=$2
+shift ; shift
+TESTS=$*
+
 NETWORK_NAME=migration-$OLD_VERSION-$NEW_VERSION
 
 set -ex
@@ -84,10 +87,13 @@ function run_tests() {
     gojira run -t $OLD_VERSION kong migrations bootstrap
 
     # Prepare list of tests to run
-    TESTS=$(gojira run -t $NEW_VERSION kong migrations tests)
-    if [ "$IGNORE_MISSING_TESTS" = "1" ]
+    if [ -z "$TESTS" ]
     then
-        TESTS=$(gojira run -t $NEW_VERSION "ls 2>/dev/null $TESTS || true")
+        TESTS=$(gojira run -t $NEW_VERSION kong migrations tests)
+        if [ "$IGNORE_MISSING_TESTS" = "1" ]
+        then
+            TESTS=$(gojira run -t $NEW_VERSION "ls 2>/dev/null $TESTS || true")
+        fi
     fi
 
     # Make tests available in OLD container
@@ -101,12 +107,15 @@ function run_tests() {
     # Run the tests
     BUSTED="env KONG_TEST_PG_DATABASE=kong bin/busted"
 
-    gojira run -t $OLD_VERSION "$BUSTED -t old_before $TESTS"
-    gojira run -t $NEW_VERSION kong migrations up
-    gojira run -t $OLD_VERSION "$BUSTED -t old_after_up $TESTS"
-    gojira run -t $NEW_VERSION "$BUSTED -t new_after_up $TESTS"
-    gojira run -t $NEW_VERSION kong migrations finish
-    gojira run -t $NEW_VERSION "$BUSTED -t new_after_finish $TESTS"
+    for test in $TESTS
+    do
+        gojira run -t $OLD_VERSION "$BUSTED -t old_before $test"
+        gojira run -t $NEW_VERSION kong migrations up
+        gojira run -t $OLD_VERSION "$BUSTED -t old_after_up $test"
+        gojira run -t $NEW_VERSION "$BUSTED -t new_after_up $test"
+        gojira run -t $NEW_VERSION kong migrations finish
+        gojira run -t $NEW_VERSION "$BUSTED -t new_after_finish $test"
+    done
 }
 
 if [ -z "$NO_BUILD" ]
