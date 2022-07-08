@@ -43,7 +43,11 @@ local _log_prefix = "[wrpc-clustering] "
 local ok_table = { ok = "done", }
 
 
-local function handle_export_deflated_reconfigure_payload(self)
+local function export_deflated_reconfigure_payload_cache(self)
+  if self.config_call_rpc and self.config_call_args then
+    return true
+  end
+
   local ok, p_err, err = pcall(self.export_deflated_reconfigure_payload, self)
   return ok, p_err or err
 end
@@ -140,7 +144,7 @@ end
 
 function _M:push_config_one_client(client)
   if not self.config_call_rpc or not self.config_call_args then
-    local ok, err = handle_export_deflated_reconfigure_payload(self)
+    local ok, err = export_deflated_reconfigure_payload_cache(self)
     if not ok then
       ngx_log(ngx_ERR, _log_prefix, "unable to export config from database: ", err)
       return
@@ -152,8 +156,8 @@ function _M:push_config_one_client(client)
 end
 
 function _M:push_config()
-  local payload, err = self:export_deflated_reconfigure_payload()
-  if not payload then
+  local ok, err = export_deflated_reconfigure_payload_cache(self)
+  if not ok then
     ngx_log(ngx_ERR, _log_prefix, "unable to export config from database: ", err)
     return
   end
@@ -263,7 +267,7 @@ local function push_config_loop(premature, self, push_config_semaphore, delay)
   end
 
   do
-    local ok, err = handle_export_deflated_reconfigure_payload(self)
+    local ok, err = export_deflated_reconfigure_payload_cache(self)
     if not ok then
       ngx_log(ngx_ERR, _log_prefix, "unable to export initial config from database: ", err)
     end
@@ -343,6 +347,9 @@ function _M:init_worker(plugins_list)
     if type(data) ~= "table" or data.schema == nil or data.schema.db_export == false then
       return
     end
+
+    -- invalidate cache
+    self.config_call_rpc, self.config_call_args = nil, nil
 
     kong.cluster_events:broadcast("clustering:push_config", data.schema.name .. ":" .. data.operation)
 
